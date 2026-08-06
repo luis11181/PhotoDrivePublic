@@ -1,0 +1,11 @@
+@import "../styles/base.css";
+@import "../styles/shell.css";
+@import "../styles/catalog.css";
+@import "../styles/details.css";
+@import "../styles/dialogs.css";
+@import "../styles/notifications.css";
+@import "../styles/auth.css";
+@import "../styles/imports.css";
+@import "../styles/developer.css";
+@import "../styles/responsive.css";
+@import "../styles/theme.css";

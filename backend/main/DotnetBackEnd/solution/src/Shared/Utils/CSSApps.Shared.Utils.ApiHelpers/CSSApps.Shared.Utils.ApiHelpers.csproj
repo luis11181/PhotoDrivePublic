@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+    </PropertyGroup>
+
+    <ItemGroup>
+    </ItemGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\CSSApps.Shared.Contracts\CSSApps.Shared.Contracts.csproj" />
+        <ProjectReference Include="..\CSSApps.Shared.Utils.Common\CSSApps.Shared.Utils.Common.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Remove="DependencyInjection\AuthorizationJwtExtension.cs" />
+        <Compile Remove="DependencyInjection\OpenTelemetryExtension.cs" />
+    </ItemGroup>
+
+</Project>

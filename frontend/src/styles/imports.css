@@ -1,0 +1,411 @@
+.imports-page {
+  min-height: 100vh;
+  padding: 24px 16px 48px;
+  background:
+    radial-gradient(circle at top right, rgba(23, 107, 76, 0.1), transparent 32%),
+    var(--paper);
+}
+.imports-header {
+  max-width: 980px;
+  margin: 0 auto 20px;
+}
+.imports-header h1 {
+  margin: 0;
+  font-size: 30px;
+}
+.imports-header p:not(.auth-eyebrow),
+.imports-section-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.imports-back {
+  width: 100%;
+  margin-top: 18px;
+  text-decoration: none;
+}
+.imports-back svg,
+.imports-refresh svg,
+.import-retry svg {
+  width: 17px;
+}
+.imports-panel,
+.imports-page > .auth-error,
+.imports-page > .auth-success {
+  width: min(980px, 100%);
+  margin-right: auto;
+  margin-left: auto;
+}
+.imports-panel {
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 7px 24px rgba(28, 48, 40, 0.05);
+}
+.imports-section-heading,
+.import-job-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.imports-section-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.imports-section-heading > svg {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+.imports-form {
+  display: grid;
+  gap: 15px;
+  margin-top: 20px;
+}
+.imports-form > label:not(.imports-confirm) {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.imports-form label small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 450;
+  line-height: 1.45;
+}
+.import-options-error {
+  margin: 0;
+}
+.imports-form input[type="text"],
+.imports-form > label > input:not([type="checkbox"]),
+.imports-form select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 11px;
+  border: 1px solid #bfc9c4;
+  border-radius: 7px;
+  background: white;
+}
+.imports-form input:focus,
+.imports-form select:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px #deeee6;
+}
+.imports-form > label.import-checkbox-option {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+.import-conflict-heading {
+  margin: 0 0 -7px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+.import-checkbox-option input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: var(--green);
+}
+.import-checkbox-option span {
+  display: grid;
+  gap: 3px;
+}
+.import-root-note {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+.import-root-note strong {
+  color: var(--ink);
+}
+.import-root-note code {
+  overflow-wrap: anywhere;
+  color: var(--green-dark);
+}
+.import-destination-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: -4px 0 0;
+  padding: 10px;
+  border-radius: 7px;
+  background: #f1f7f4;
+  color: #44564e;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.import-destination-note svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--green);
+}
+.imports-privacy-note,
+.import-job-note,
+.import-destination {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.import-skipped-breakdown {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.import-destination strong {
+  color: var(--ink);
+}
+.imports-results-help {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 10px;
+  border-radius: 7px;
+  background: #f1f7f4;
+  color: #44564e;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.imports-results-help svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--green);
+}
+.imports-refresh {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+}
+.import-job-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.import-job-card {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+.import-job-title {
+  align-items: center;
+}
+.import-job-title time {
+  color: var(--muted);
+  font-size: 10px;
+}
+.import-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+.import-state svg {
+  width: 16px;
+}
+.import-state-completed {
+  color: var(--green);
+}
+.import-state-completed_with_errors {
+  color: #9a5b09;
+}
+.import-progress {
+  height: 7px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dfe7e2;
+}
+.import-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--green);
+  transition: width 0.2s ease;
+}
+.import-count-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+.import-count-grid > button {
+  min-width: 0;
+  padding: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: white;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: left;
+}
+.import-count-grid > button:not(:disabled) {
+  cursor: pointer;
+}
+.import-count-grid > button:not(:disabled):hover,
+.import-count-grid > button.import-count-active {
+  border-color: #9dc6b3;
+  background: #f5fbf8;
+}
+.import-count-grid > button.import-count-active svg {
+  transform: rotate(180deg);
+}
+.import-count-grid > button:disabled {
+  opacity: 0.58;
+}
+.import-count-grid svg {
+  width: 14px;
+  flex: 0 0 14px;
+  transition: transform 0.15s ease;
+}
+.import-count-grid strong {
+  display: block;
+  color: var(--ink);
+  font-size: 17px;
+}
+.import-count-grid .import-count-danger strong {
+  color: #a92b2b;
+}
+.import-retry {
+  margin-top: 14px;
+}
+.import-item-results {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.import-item-results h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.import-item-results > ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.import-item-results > ul > li {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #dfe7e2;
+  border-radius: 7px;
+  background: white;
+}
+.import-item-results > ul > li > div {
+  display: grid;
+  gap: 3px;
+}
+.import-item-results strong,
+.import-item-results code {
+  overflow-wrap: anywhere;
+}
+.import-item-results strong {
+  font-size: 12px;
+}
+.import-item-results code {
+  color: var(--muted);
+  font-size: 9px;
+}
+.import-item-results > ul > li > p {
+  margin: 7px 0 0;
+  color: #44514c;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.import-warning-list {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding-left: 16px;
+  color: #84520d;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.import-item-results .import-item-error {
+  color: #a92b2b;
+}
+.import-results-more {
+  width: 100%;
+  margin-top: 10px;
+}
+.imports-empty,
+.imports-denied {
+  padding: 28px 12px;
+  color: var(--muted);
+  text-align: center;
+}
+.imports-empty svg,
+.imports-denied > svg {
+  width: 38px;
+  height: 38px;
+  color: var(--green);
+}
+.imports-denied {
+  margin-top: 12vh;
+}
+@media (min-width: 700px) {
+  .imports-page {
+    padding: 40px 24px 64px;
+  }
+  .imports-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .imports-back {
+    width: auto;
+    margin-top: 0;
+    padding: 0 14px;
+  }
+  .imports-panel {
+    padding: 22px;
+  }
+  .imports-form {
+    grid-template-columns: minmax(0, 1.6fr) minmax(220px, 0.8fr);
+  }
+  .imports-form > label:first-child {
+    grid-column: 1 / -1;
+  }
+  .imports-form .import-root-note,
+  .imports-form .import-options-error,
+  .imports-form .import-conflict-heading,
+  .imports-form .imports-confirm,
+  .imports-form .auth-primary {
+    grid-column: 1 / -1;
+  }
+  .import-count-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}

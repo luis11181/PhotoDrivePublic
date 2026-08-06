@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\Shared\CSSApps.Shared.Contracts\CSSApps.Shared.Contracts.csproj" />
+        <ProjectReference Include="..\..\..\Shared\Utils\CSSApps.Shared.Utils.ApiHelpers\CSSApps.Shared.Utils.ApiHelpers.csproj" />
+        <ProjectReference Include="..\CSSApps.Users.Application\CSSApps.Users.Application.csproj" />
+        <ProjectReference Include="..\CSSApps.Users.Contracts\CSSApps.Users.Contracts.csproj" />
+        <ProjectReference Include="..\CSSApps.Users.Infrastructure\CSSApps.Users.Infrastructure.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Asp.Versioning.Mvc" Version="8.1.1" />
+        <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+
+</Project>

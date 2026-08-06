@@ -1,0 +1,40 @@
+{
+  "name": "photodrive-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "smoke:live": "node ../scripts/smoke/live-media-flow.cjs",
+    "smoke:release": "node ../scripts/smoke/release-ui.cjs",
+    "start": "serve out",
+    "serve-static": "serve out -l 3000 --no-port-switching",
+    "serve-static:production": "serve out -l 60020 --no-port-switching"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.101.2",
+    "hash-wasm": "^4.12.0",
+    "lucide-react": "0.511.0",
+    "next": "16.2.12",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.50",
+    "@types/react": "19.1.5",
+    "@types/react-dom": "19.1.5",
+    "eslint": "9.27.0",
+    "eslint-config-next": "16.2.12",
+    "prettier": "^3.9.5",
+    "playwright": "1.59.1",
+    "serve": "14.2.6",
+    "typescript": "5.8.3"
+  },
+  "overrides": {
+    "postcss": "8.5.23",
+    "sharp": "0.35.3"
+  }
+}

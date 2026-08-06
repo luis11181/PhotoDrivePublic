@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\MediaExplorer.Media.Contracts\MediaExplorer.Media.Contracts.csproj" />
+    <ProjectReference Include="..\MediaExplorer.Media.Domain\MediaExplorer.Media.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Shared\CSSApps.Shared.Contracts\CSSApps.Shared.Contracts.csproj" />
+  </ItemGroup>
+</Project>

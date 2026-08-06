@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+    </PropertyGroup>
+
+    <!-- Allow Infrastructure to access internal navigation properties for EF Core configuration -->
+    <ItemGroup>
+        <InternalsVisibleTo Include="CSSApps.Users.Infrastructure" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\Shared\CSSApps.Shared.Contracts\CSSApps.Shared.Contracts.csproj"/>
+        <ProjectReference Include="..\..\..\Shared\Utils\CSSApps.Shared.Utils.Common\CSSApps.Shared.Utils.Common.csproj"/>
+    </ItemGroup>
+
+
+    <ItemGroup>
+        <Folder Include="Constants\"/>
+    </ItemGroup>
+
+</Project>

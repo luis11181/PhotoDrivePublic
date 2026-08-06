@@ -1,0 +1,25 @@
+<!-- For more info on central package management go to https://devblogs.microsoft.com/nuget/introducing-central-package-management/ -->
+<Project>
+    <PropertyGroup>
+        <!--<ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>-->
+    </PropertyGroup>
+    <ItemGroup Condition="$(MSBuildProjectExtension) == '.csproj'">
+        <!--<PackageReference Include="FluentResults" Version="3.15.2"/>-->
+    </ItemGroup>
+    <ItemGroup Condition="$(MSBuildProjectFullPath.Contains('Tests'))">
+        <PackageReference Include="NSubstitute" Version="5.3.0"/>
+        <PackageReference Include="Verify.Xunit" Version="28.2.0"/>
+    </ItemGroup>
+    <ItemGroup Condition="$(MSBuildProjectName.EndsWith('.Application'))">
+    </ItemGroup>
+    <ItemGroup Condition="$(MSBuildProjectName.EndsWith('.Infrastructure'))">
+    </ItemGroup>
+    <!--<ItemGroup Condition="$(MSBuildProjectFullPath.Contains('Tests'))">
+      <PackageReference Include="NetArchTest.Rules" Version="1.3.2" />
+      <PackageReference Include="NSubstitute" Version="5.1.0" />
+      <PackageReference Include="nunit" Version="4.0.1" />
+      <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+      <PackageReference Include="FluentAssertions" Version="6.12.0" />
+      <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    </ItemGroup>-->
+</Project>

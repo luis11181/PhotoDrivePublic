@@ -1,0 +1,79 @@
+#!/bin/sh
+set -eu
+
+cd "$(dirname "$0")"
+
+require_compose() {
+  command -v docker >/dev/null 2>&1 || { printf 'Docker is required.\n' >&2; exit 1; }
+  docker compose version >/dev/null 2>&1 || { printf 'Docker Compose v2 is required.\n' >&2; exit 1; }
+}
+
+require_env() {
+  [ -f .env ] || {
+    printf 'Create .env first: cp .env.example .env\n' >&2
+    exit 1
+  }
+}
+
+migrate() {
+  docker compose run --rm --no-deps photodrive database migrate --confirm MIGRATE
+}
+
+command=${1:-help}
+case "$command" in
+  setup)
+    require_compose
+    require_env
+    docker compose --profile tools run --rm aws-setup
+    docker compose build
+    migrate
+    docker compose up --detach
+    docker compose ps
+    ;;
+  start)
+    require_compose
+    require_env
+    docker compose up --detach
+    docker compose ps
+    ;;
+  stop)
+    require_compose
+    docker compose down
+    ;;
+  update)
+    require_compose
+    require_env
+    docker compose build --pull
+    migrate
+    docker compose up --detach
+    docker compose ps
+    ;;
+  validate)
+    require_compose
+    require_env
+    docker compose run --rm --no-deps photodrive config validate
+    ;;
+  logs)
+    require_compose
+    docker compose logs --follow photodrive
+    ;;
+  status)
+    require_compose
+    docker compose ps
+    ;;
+  help|--help|-h)
+    printf '%s\n' \
+      'PhotoDrive commands:' \
+      '  ./photodrive setup     provision S3, build, migrate, and start' \
+      '  ./photodrive start     start the existing installation' \
+      '  ./photodrive stop      stop the app without deleting data' \
+      '  ./photodrive update    rebuild, migrate, and restart' \
+      '  ./photodrive validate  validate the effective configuration' \
+      '  ./photodrive logs      follow application logs' \
+      '  ./photodrive status    show container health'
+    ;;
+  *)
+    printf 'Unknown command: %s\n' "$command" >&2
+    exit 1
+    ;;
+esac

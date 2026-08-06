@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\MediaExplorer.Media.Application\MediaExplorer.Media.Application.csproj" />
+    <ProjectReference Include="..\MediaExplorer.Media.Contracts\MediaExplorer.Media.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Shared\CSSApps.Shared.Contracts\CSSApps.Shared.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\Shared\Utils\CSSApps.Shared.Utils.ApiHelpers\CSSApps.Shared.Utils.ApiHelpers.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Asp.Versioning.Mvc" Version="8.1.1" />
+  </ItemGroup>
+</Project>

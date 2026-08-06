@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\CSSApps.Shared.Contracts\CSSApps.Shared.Contracts.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Remove="AwsSetup.cs" />
+        <Compile Remove="HttpContextEnricher.cs" />
+        <Compile Remove="IntegrationEvents\**" />
+        <Compile Remove="Settings\**" />
+    </ItemGroup>
+
+</Project>

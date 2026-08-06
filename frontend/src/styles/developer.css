@@ -1,0 +1,276 @@
+.developer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+.developer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.developer-header-actions .imports-back {
+  width: auto;
+  margin-top: 0;
+}
+.developer-health {
+  border-color: #bfd8ca;
+  background: linear-gradient(145deg, #f5fbf8, white 64%);
+}
+.developer-health-attention {
+  border-color: #e3c781;
+  background: linear-gradient(145deg, #fff9e9, white 64%);
+}
+.developer-health-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+}
+.developer-health-heading h2,
+.developer-health-card h3 {
+  margin: 0;
+}
+.developer-health-heading p:not(.auth-eyebrow) {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.developer-health-mark {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 50%;
+  background: #dcefe5;
+  color: var(--green-dark);
+}
+.developer-health-mark-attention {
+  background: #fff0c9;
+  color: #765515;
+}
+.developer-health-mark-checking,
+.developer-health-mark-neutral {
+  background: var(--soft);
+  color: var(--muted);
+}
+.developer-health-mark svg {
+  width: 20px;
+}
+.developer-health-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.developer-health-card {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-height: 152px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+.developer-health-card-attention {
+  border-color: #e3c781;
+}
+.developer-health-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.developer-health-card-heading > svg {
+  width: 18px;
+  color: var(--green);
+}
+.developer-health-card-attention .developer-health-card-heading > svg {
+  color: #8a681b;
+}
+.developer-health-card h3 {
+  font-size: 14px;
+}
+.developer-health-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.developer-health-card a {
+  align-self: end;
+  width: fit-content;
+  margin-top: 3px;
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 700;
+}
+.developer-health-badge {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #dcefe5;
+  color: var(--green-dark);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.developer-health-badge-attention {
+  background: #fff0c9;
+  color: #765515;
+}
+.developer-health-badge-checking,
+.developer-health-badge-neutral {
+  background: var(--soft);
+  color: var(--muted);
+}
+#cache-preparation,
+#storage-safety {
+  scroll-margin-top: 16px;
+}
+.developer-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.developer-metrics > span {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.developer-metrics small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.developer-backup-status {
+  font-weight: 700;
+}
+.developer-metrics .developer-backup-status-current {
+  color: var(--green-dark);
+}
+.developer-metrics .developer-backup-status-stale {
+  color: #765515;
+}
+.developer-backup-status-missing {
+  color: var(--muted);
+}
+.developer-overview-note {
+  margin: 12px 0 0;
+}
+.developer-cache-choice span {
+  display: grid;
+  gap: 4px;
+}
+.developer-cache-choice small {
+  color: var(--muted);
+  font-weight: 450;
+}
+.developer-callout {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff5db;
+  color: #66501f;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.developer-preview {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.developer-preview h3 {
+  margin: 0;
+}
+.developer-preview > button {
+  margin-top: 14px;
+}
+.developer-job-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.developer-job {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+.developer-current-build {
+  margin-top: 18px;
+}
+.developer-job-heading,
+.developer-job-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.developer-job p,
+.developer-job small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.developer-job progress {
+  width: 100%;
+  accent-color: var(--green);
+}
+.developer-state {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--green-dark);
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+.developer-state-completed_with_errors,
+.developer-state-cancelling {
+  background: #fff0ce;
+  color: #765515;
+}
+.developer-state-cancelled {
+  color: var(--muted);
+}
+.maintenance-embedded,
+.maintenance-surface {
+  width: 100%;
+}
+.maintenance-surface > .auth-eyebrow,
+.maintenance-surface > h2 {
+  margin-left: 0;
+}
+.maintenance-surface > .auth-copy {
+  margin: 8px 0 0;
+}
+.maintenance-action .auth-copy + .auth-copy {
+  margin-top: -6px;
+}
+.developer-maintenance-panel .maintenance-actions {
+  margin-top: 16px;
+}
+@media (max-width: 680px) {
+  .developer-header,
+  .developer-header-actions {
+    flex-direction: column;
+  }
+  .developer-header-actions,
+  .developer-header-actions .imports-back {
+    width: 100%;
+  }
+  .developer-health-grid {
+    grid-template-columns: 1fr;
+  }
+  .developer-health-card {
+    min-height: 0;
+  }
+}

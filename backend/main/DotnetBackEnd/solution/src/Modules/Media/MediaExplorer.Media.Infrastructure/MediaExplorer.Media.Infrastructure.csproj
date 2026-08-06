@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" Version="4.0.20.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.5" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MediaExplorer.Media.Application\MediaExplorer.Media.Application.csproj" />
+    <ProjectReference Include="..\MediaExplorer.Media.Contracts\MediaExplorer.Media.Contracts.csproj" />
+    <ProjectReference Include="..\MediaExplorer.Media.Domain\MediaExplorer.Media.Domain.csproj" />
+    <ProjectReference Include="..\..\..\Shared\CSSApps.Shared.Infrastructure\CSSApps.Shared.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

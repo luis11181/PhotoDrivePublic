@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\Shared\CSSApps.Shared.Contracts\CSSApps.Shared.Contracts.csproj"/>
+        <ProjectReference Include="..\CSSApps.Users.Domain\CSSApps.Users.Domain.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Folder Include="DTOs\"/>
+    </ItemGroup>
+
+</Project>

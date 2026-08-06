@@ -1,0 +1,80 @@
+### EF Core Migrations - Suppress all warnings
+# NOTE: Roslyn's editorconfig globbing doesn't reliably treat `**/` as matching
+# the empty segment in all contexts, so we include both patterns.
+[**/Migrations/*.cs]
+# Disable all analyzer warnings for generated migration files
+dotnet_analyzer_diagnostic.severity = none
+generated_code = true
+
+[**/Migrations/**/*.cs]
+# Disable all analyzer warnings for generated migration files
+dotnet_analyzer_diagnostic.severity = none
+generated_code = true
+
+
+[*.cs]
+indent_style = space
+indent_size = 2
+tab_width = 2
+
+# CA2007: ConfigureAwait usage - set as hint
+dotnet_diagnostic.CA2007.severity = suggestion
+
+# CA1034: Nested types should not be visible - set as hint (used for organizing constants)
+dotnet_diagnostic.CA1034.severity = suggestion
+
+# CA1062: Validate public method parameters
+# Set as suggestion - our architecture uses Result pattern, model validation,
+# and most cases are framework overrides or internal methods
+dotnet_diagnostic.CA1062.severity = suggestion
+
+# CA1812: Avoid uninstantiated internal classes
+# Set as suggestion - DI and event handlers are instantiated via reflection
+dotnet_diagnostic.CA1812.severity = suggestion
+
+# CA1716: Identifiers should not match keywords
+# "Shared" is a meaningful architectural term, not concerned with VB.NET interop
+dotnet_diagnostic.CA1716.severity = suggestion
+
+# CA1724: Type names should not match namespaces
+# Common in DDD/Clean Architecture - DependencyInjection classes per module
+dotnet_diagnostic.CA1724.severity = suggestion
+
+# CA1805: Do not initialize unnecessarily
+dotnet_diagnostic.CA1805.severity = none
+
+### Clean architecture
+
+# CA1829 Properties should not return arrays
+# is necessary for some EFCore models
+dotnet_diagnostic.CA1819.severity = suggestion
+
+# CA1031: Do not catch general exception types
+# is necessary in some cases with my Result pattern
+dotnet_diagnostic.CA1031.severity = suggestion
+
+###logs
+
+# CA1848: Use LoggerMessage delegates - set as hint for now
+dotnet_diagnostic.CA1848.severity = none
+
+# CA1873: Avoid expensive argument evaluation in logging
+dotnet_diagnostic.CA1873.severity = suggestion
+
+# CA1727 : logging use pascal
+dotnet_diagnostic.CA1727.severity = none
+
+
+### API Design & URI Handling
+
+# CA1054: Uri parameters should not be strings
+# API Controllers use string for binding
+dotnet_diagnostic.CA1054.severity = none
+
+# CA1056: Uri properties should not be strings
+# API Models use string for binding
+dotnet_diagnostic.CA1056.severity = none
+
+# CA1515: Consider making public types internal
+# API Project types are public by design
+dotnet_diagnostic.CA1515.severity = none

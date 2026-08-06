@@ -1,0 +1,37 @@
+name: photodrive
+
+services:
+  photodrive:
+    build:
+      context: .
+    image: photodrive:local
+    env_file:
+      - .env
+    ports:
+      - "${PHOTODRIVE_PORT:-8080}:8080"
+    volumes:
+      - photodrive-data:/data
+    restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+
+  aws-setup:
+    image: amazon/aws-cli:2
+    profiles:
+      - tools
+    env_file:
+      - .env
+    entrypoint:
+      - /bin/sh
+      - /workspace/scripts/configure-s3.sh
+    volumes:
+      - ./scripts:/workspace/scripts:ro
+
+volumes:
+  photodrive-data:
+    name: photodrive-data
