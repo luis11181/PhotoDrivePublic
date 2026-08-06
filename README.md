@@ -3,6 +3,7 @@
 PhotoDrive is a self-hosted family Photos + Drive application. It combines a
 capture-date photo timeline, albums, real folders, private sharing, and
 invite-only family accounts in one responsive web app.
+It has my preferred features and defaults, and is a cheap and safe alternative to a local NAS
 
 ![PhotoDrive Photos timeline](docs/assets/full-library-preview.webp)
 
