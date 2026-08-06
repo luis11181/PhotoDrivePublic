@@ -7,9 +7,7 @@ invite-only family accounts in one responsive web app.
 ![PhotoDrive Photos timeline](docs/assets/full-library-preview.webp)
 
 This repository is the sanitized, self-hostable distribution. It contains no
-private installation configuration, credentials, media, databases, or machine
-paths. The repository includes only a sanitized product preview—not a separate
-demo application.
+private installation configuration.
 
 ## What it includes
 
