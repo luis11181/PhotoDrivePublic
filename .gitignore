@@ -13,12 +13,6 @@ frontend/out/
 frontend/next-env.d.ts
 frontend/*.tsbuildinfo
 
-demo-frontend/node_modules/
-demo-frontend/.next/
-demo-frontend/out/
-demo-frontend/next-env.d.ts
-demo-frontend/*.tsbuildinfo
-
 **/bin/
 **/obj/
 .idea/

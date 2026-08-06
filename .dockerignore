@@ -6,7 +6,6 @@
 **/.env
 **/.env.*
 !**/.env.example
-demo-frontend
 **/.idea
 **/.vscode
 **/node_modules

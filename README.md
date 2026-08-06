@@ -4,12 +4,12 @@ PhotoDrive is a self-hosted family Photos + Drive application. It combines a
 capture-date photo timeline, albums, real folders, private sharing, and
 invite-only family accounts in one responsive web app.
 
-![PhotoDrive Photos timeline](demo-frontend/public/demo/full-library-preview.webp)
+![PhotoDrive Photos timeline](docs/assets/full-library-preview.webp)
 
 This repository is the sanitized, self-hostable distribution. It contains no
 private installation configuration, credentials, media, databases, or machine
-paths. The public showcase in `demo-frontend/` is backend-free and uses a
-sanitized product image.
+paths. The repository includes only a sanitized product preview—not a separate
+demo application.
 
 ## What it includes
 
@@ -126,8 +126,7 @@ dotnet test tests/MediaExplorer.Media.Tests/MediaExplorer.Media.Tests.csproj
 dotnet build src/Hosts/CSSApps.Api/CSSApps.Api.csproj --no-restore
 ```
 
-The browser contract is documented in [backend/API.md](backend/API.md). The
-public landing page can be built independently from `demo-frontend/`.
+The browser contract is documented in [backend/API.md](backend/API.md).
 
 ## Scope
 
