@@ -21,7 +21,7 @@ services:
       - /tmp:size=1g,mode=1777
 
   aws-setup:
-    image: amazon/aws-cli:2
+    image: public.ecr.aws/aws-cli/aws-cli:latest
     profiles:
       - tools
     env_file:
