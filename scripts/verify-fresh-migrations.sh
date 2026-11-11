@@ -9,6 +9,8 @@ trap 'rm -rf -- "$temporary_root"' EXIT
 export ASPNETCORE_ENVIRONMENT=Development
 # A disposable local Turso file; never the Development cloud database from infrastructure.Development.json.
 export Database__Url="$temporary_root/photodrive.db"
+export Database__ReplicaPath="$temporary_root/turso/photodrive.replica.db"
+export Security__DataProtectionKeysDirectory="$temporary_root/keys"
 export MediaStorage__LocalDisk__StagingDirectory="$temporary_root/staging"
 export MediaStorage__LocalDisk__ThumbnailDirectory="$temporary_root/thumbnails"
 export MediaStorage__LocalDisk__OriginalCacheDirectory="$temporary_root/cache/blobs/sha256"
