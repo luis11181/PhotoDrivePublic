@@ -36,6 +36,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
+      - name: Install media tools used by the metadata and thumbnail tests
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends imagemagick ffmpeg file
       - run: dotnet restore tests/MediaExplorer.Media.Tests/MediaExplorer.Media.Tests.csproj
       - run: dotnet test tests/MediaExplorer.Media.Tests/MediaExplorer.Media.Tests.csproj --no-restore --disable-build-servers --maxcpucount:1
       - run: dotnet build src/Hosts/CSSApps.Api/CSSApps.Api.csproj --no-restore --disable-build-servers --maxcpucount:1
