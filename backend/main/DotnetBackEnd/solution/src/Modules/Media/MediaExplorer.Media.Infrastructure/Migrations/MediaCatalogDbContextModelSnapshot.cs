@@ -184,6 +184,9 @@ namespace MediaExplorer.Media.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("HostId")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("KeepOriginals")
                         .HasColumnType("INTEGER");
 
@@ -208,6 +211,8 @@ namespace MediaExplorer.Media.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("HostId", "State");
 
                     b.HasIndex("RequestedByUserId", "CreatedAt");
 
@@ -448,6 +453,47 @@ namespace MediaExplorer.Media.Infrastructure.Migrations
                     b.ToTable("catalog_shares", null, t =>
                         {
                             t.HasCheckConstraint("CK_catalog_shares_exactly_one_item", "(CASE WHEN \"FileId\" IS NULL THEN 0 ELSE 1 END + CASE WHEN \"FolderId\" IS NULL THEN 0 ELSE 1 END + CASE WHEN \"AlbumId\" IS NULL THEN 0 ELSE 1 END) = 1");
+                        });
+                });
+
+            modelBuilder.Entity("MediaExplorer.Media.Domain.ClusterSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("BackupConsecutiveFailures")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("LastBackupFailedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastBackupFailureCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastBackupSetId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastBackupVerifiedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("PrimaryChangedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PrimaryChangedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("PrimaryHostId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PrimaryHostId");
+
+                    b.ToTable("cluster_settings", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_cluster_settings_singleton", "\"Id\" = 1");
                         });
                 });
 
@@ -797,6 +843,9 @@ namespace MediaExplorer.Media.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("HostId")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("IgnoredJsonCount")
                         .HasColumnType("INTEGER");
 
@@ -845,6 +894,8 @@ namespace MediaExplorer.Media.Infrastructure.Migrations
 
                     b.HasIndex("TargetFolderId");
 
+                    b.HasIndex("HostId", "State");
+
                     b.HasIndex("State", "CreatedAt");
 
                     b.HasIndex("UserId", "CreatedAt");
@@ -878,6 +929,27 @@ namespace MediaExplorer.Media.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("libraries", (string)null);
+                });
+
+            modelBuilder.Entity("MediaExplorer.Media.Domain.ServerHost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FirstSeenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastSeenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("hosts", (string)null);
                 });
 
             modelBuilder.Entity("MediaExplorer.Media.Domain.StorageCleanupCandidate", b =>
@@ -1158,6 +1230,14 @@ namespace MediaExplorer.Media.Infrastructure.Migrations
                         .HasForeignKey("LibraryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("MediaExplorer.Media.Domain.ClusterSettings", b =>
+                {
+                    b.HasOne("MediaExplorer.Media.Domain.ServerHost", null)
+                        .WithMany()
+                        .HasForeignKey("PrimaryHostId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("MediaExplorer.Media.Domain.FileTag", b =>

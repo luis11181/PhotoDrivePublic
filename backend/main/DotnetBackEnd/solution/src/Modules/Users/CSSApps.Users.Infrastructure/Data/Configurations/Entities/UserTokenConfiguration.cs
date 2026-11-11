@@ -31,7 +31,7 @@ internal sealed class UserTokenConfiguration : IEntityTypeConfiguration<UserToke
             .WithMany()
             .HasForeignKey(e => e.UserId)
             .OnDelete(DeleteBehavior.Cascade);
-
+            
         // Foreign key to UserSession
         builder.HasOne<UserSession>()
             .WithMany()

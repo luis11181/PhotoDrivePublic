@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MediaExplorer.Media.Api.Controllers.v1;
 
-/// <summary>Manages library-owned photo albums and private family viewer sharing.</summary>
+/// <summary>Manages library-owned photo albums and private family viewer/collaborator sharing.</summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/albums")]
@@ -89,7 +89,7 @@ public sealed class AlbumsController(IAlbumService albums, IMediaDeliveryService
             () => Ok(ApiRes.Success()), error => this.ToApiError(error));
     }
 
-    /// <summary>Idempotently adds one active Photos item from the same library.</summary>
+    /// <summary>Lets an owner or collaborator idempotently add an active image/video from their own library.</summary>
     [HttpPut("{albumId:guid}/items/{fileId:guid}")]
     [RequireAntiforgeryToken]
     public async Task<IActionResult> AddItem(Guid albumId, Guid fileId, CancellationToken cancellationToken)
@@ -99,7 +99,7 @@ public sealed class AlbumsController(IAlbumService albums, IMediaDeliveryService
             () => Ok(ApiRes.Success()), error => this.ToApiError(error));
     }
 
-    /// <summary>Idempotently removes one file from an owned album without changing the file.</summary>
+    /// <summary>Lets an owner or collaborator idempotently remove any member without changing its file.</summary>
     [HttpDelete("{albumId:guid}/items/{fileId:guid}")]
     [RequireAntiforgeryToken]
     public async Task<IActionResult> RemoveItem(Guid albumId, Guid fileId, CancellationToken cancellationToken)
@@ -109,7 +109,7 @@ public sealed class AlbumsController(IAlbumService albums, IMediaDeliveryService
             () => Ok(ApiRes.Success()), error => this.ToApiError(error));
     }
 
-    /// <summary>Transactionally adds or removes up to 300 album members with per-item outcomes.</summary>
+    /// <summary>Lets an owner or collaborator transactionally add/remove up to 300 members with per-item outcomes.</summary>
     [HttpPost("{albumId:guid}/items/batch")]
     [RequireAntiforgeryToken]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiRes<BatchItemsRes>))]
@@ -118,7 +118,7 @@ public sealed class AlbumsController(IAlbumService albums, IMediaDeliveryService
             ? this.ToApiResult(await albums.SetItemsAsync(userId, albumId, request, cancellationToken))
             : Unauthorized(ApiRes.Unauthorized());
 
-    /// <summary>Lists direct viewer grants for an album owned by the caller.</summary>
+    /// <summary>Lists direct viewer and collaborator grants for an album owned by the caller.</summary>
     [HttpGet("{albumId:guid}/shares")]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiRes<AlbumSharesRes>))]
     public async Task<IActionResult> Shares(Guid albumId, CancellationToken cancellationToken) =>
@@ -126,7 +126,7 @@ public sealed class AlbumsController(IAlbumService albums, IMediaDeliveryService
             ? this.ToApiResult(await albums.ListSharesAsync(userId, albumId, cancellationToken))
             : Unauthorized(ApiRes.Unauthorized());
 
-    /// <summary>Creates or refreshes a private family viewer grant for an owned album.</summary>
+    /// <summary>Creates or changes a private family viewer/collaborator grant for an owned album.</summary>
     [HttpPut("{albumId:guid}/shares/{recipientUserId:guid}")]
     [RequireAntiforgeryToken]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiRes<ItemShareRes>))]

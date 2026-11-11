@@ -6,6 +6,7 @@ using MediaExplorer.Media.Contracts;
 using MediaExplorer.Media.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
 namespace MediaExplorer.Media.Infrastructure;
 
@@ -18,10 +19,17 @@ internal sealed class ImportService(
     IUploaderIdentityDirectory uploaderIdentityDirectory,
     MediaMetadataWorkSignal metadataWorkSignal,
     ImportWorkSignal importWorkSignal,
-    ILogger<ImportService> logger) : IImportService
+    IConfiguration configuration,
+    ILogger<ImportService> logger,
+    HostIdentity? host = null) : IImportService
 {
     private static readonly TimeSpan ProcessingLease = TimeSpan.FromMinutes(15);
+    // Jobs belong to the host whose local inbox or cache they use; null host ids (older jobs, tests) run anywhere.
+    private readonly Guid? _hostId = host?.Id;
     private const int MaximumDiscoveredFiles = 100_000;
+
+    public Result<ImportSourceFoldersRes> ListSourceFolders(string? path, string? cursor, int limit, CancellationToken cancellationToken)
+        => new ImportSourceDirectory(configuration).List(path, cursor, limit, cancellationToken);
 
     private static StringComparer PathComparer =>
         OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
@@ -131,7 +139,7 @@ internal sealed class ImportService(
         if (policy is not ("skip" or "keep_both"))
             return MediaErrors.Validation("Name conflict policy must be skip or keep_both.");
         var storedPolicy = StoredConflictPolicy(policy, request.SkipIdenticalFiles);
-        var sourceResult = ValidateSourceRoot(request.SourcePath);
+        var sourceResult = new ImportSourceDirectory(configuration).Resolve(request.SourcePath);
         if (sourceResult.IsFailure) return sourceResult.ErrorValue;
         var sourceRoot = sourceResult.SuccessValue;
         var library = await libraryBootstrapper.GetOrCreateAsync(userId, cancellationToken);
@@ -169,6 +177,7 @@ internal sealed class ImportService(
             TargetFolderId = request.DestinationFolderId,
             TargetFolderPath = destinationPath,
             SourcePath = sourceRoot,
+            HostId = host?.Id,
             NameConflictPolicy = storedPolicy,
             State = ImportJob.RunningState,
             OrphanSidecarCount = scan.OrphanSidecarCount,
@@ -228,6 +237,50 @@ internal sealed class ImportService(
         return (await ToResponsesAsync([job], cancellationToken))[0];
     }
 
+    /// <summary>
+    /// Removes a finished import's record and per-file results. Files it already imported stay in the catalog; the
+    /// job's history (and, for failed items, the chance to retry them) is what goes away.
+    /// </summary>
+    public async Task<Result> DeleteAsync(Guid userId, Guid jobId, CancellationToken cancellationToken)
+    {
+        var job = await dbContext.ImportJobs.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.Id == jobId && candidate.UserId == userId,
+            cancellationToken);
+        if (job is null) return MediaErrors.NotFound("The requested import job was not found.");
+        if (job.State == ImportJob.RunningState)
+            return MediaErrors.Conflict("A running import cannot be removed. Wait until it finishes.");
+        await DeleteJobsAsync([job.Id], cancellationToken);
+        logger.LogInformation("[media.import] removed job={JobId}", job.Id);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Deletes imports that finished without failures more than <c>MediaStorage:Imports:FinishedJobRetentionDays</c>
+    /// (30 by default) ago, with their per-file results. Jobs with failed items are kept so they can still be retried
+    /// or removed explicitly.
+    /// </summary>
+    internal async Task<int> PruneFinishedJobsAsync(DateTime utcNow, CancellationToken cancellationToken)
+    {
+        var retentionDays = Math.Clamp(configuration.GetValue("MediaStorage:Imports:FinishedJobRetentionDays", 30), 1, 3650);
+        var cutoff = utcNow.AddDays(-retentionDays);
+        var jobIds = await dbContext.ImportJobs.AsNoTracking()
+            .Where(job => job.State == ImportJob.CompletedState && job.CompletedAt != null && job.CompletedAt < cutoff)
+            .Select(job => job.Id)
+            .ToListAsync(cancellationToken);
+        if (jobIds.Count == 0) return 0;
+        await DeleteJobsAsync(jobIds, cancellationToken);
+        logger.LogInformation("[media.import] pruned finished jobs count={Count} retentionDays={RetentionDays}", jobIds.Count, retentionDays);
+        return jobIds.Count;
+    }
+
+    private async Task DeleteJobsAsync(IReadOnlyCollection<Guid> jobIds, CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.ImportItems.Where(item => jobIds.Contains(item.ImportJobId)).ExecuteDeleteAsync(cancellationToken);
+        await dbContext.ImportJobs.Where(job => jobIds.Contains(job.Id)).ExecuteDeleteAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     internal async Task<int> ProcessPendingBatchAsync(int limit, CancellationToken cancellationToken)
     {
         var processed = 0;
@@ -238,7 +291,8 @@ internal sealed class ImportService(
                 .Where(candidate => candidate.State == ImportItem.PendingState
                     || (candidate.State == ImportItem.ProcessingState && candidate.ProcessingStartedAt < staleBefore))
                 .Join(
-                    dbContext.ImportJobs.Where(job => job.State == ImportJob.RunningState),
+                    dbContext.ImportJobs.Where(job => job.State == ImportJob.RunningState
+                        && (_hostId == null || job.HostId == null || job.HostId == _hostId)),
                     candidate => candidate.ImportJobId,
                     job => job.Id,
                     (candidate, _) => candidate)
@@ -538,7 +592,7 @@ internal sealed class ImportService(
         return new ScanResult(candidates, sidecarPaths.Count - usedSidecars.Count, ignoredJsonCount);
     }
 
-    private static Result<string> ValidateSourceRoot(string? requestedPath)
+    private Result<string> ValidateSourceRoot(string? requestedPath)
     {
         if (string.IsNullOrWhiteSpace(requestedPath))
             return MediaErrors.Validation("Choose an extracted Google Photos Takeout directory.");
@@ -546,7 +600,13 @@ internal sealed class ImportService(
         string fullPath;
         try
         {
-            fullPath = Path.GetFullPath(requestedPath.Trim());
+            var sources = new ImportSourceDirectory(configuration);
+            var root = sources.Resolve("");
+            if (root.IsFailure) return root.ErrorValue;
+            if (!Path.IsPathFullyQualified(requestedPath)) return MediaErrors.Validation("The import source is unavailable.");
+            var resolved = sources.Resolve(Path.GetRelativePath(root.SuccessValue, requestedPath).Replace('\\', '/'));
+            if (resolved.IsFailure) return resolved.ErrorValue;
+            fullPath = resolved.SuccessValue;
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
         {

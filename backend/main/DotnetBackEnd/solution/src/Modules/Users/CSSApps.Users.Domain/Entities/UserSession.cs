@@ -27,49 +27,49 @@ public class UserSession : AuditableEntity, IAggregateRoot
     }
 
     public Guid Id { get; private set; }
-
+    
     public Guid UserId { get; private set; }
-
+    
     /// <summary>
     /// Friendly device name if provided
     /// </summary>
     public string? DeviceName { get; private set; }
-
+    
     /// <summary>
     /// IP address from which the session was created
     /// </summary>
     public string IpAddress { get; private set; } = null!;
-
+    
     /// <summary>
     /// User agent string for browser identification
     /// </summary>
     public string UserAgent { get; private set; } = null!;
-
+    
     /// <summary>
     /// Last activity timestamp
     /// </summary>
     public DateTime LastActivity { get; private set; }
-
+    
     /// <summary>
     /// When the session was first created
     /// </summary>
     public DateTime FirstLoginAt { get; private set; }
-
+    
     /// <summary>
     /// Number of times this device has been used for login
     /// </summary>
     public int LoginCount { get; private set; }
-
+    
     /// <summary>
     /// Whether this session is currently active
     /// </summary>
     public bool IsActive { get; private set; }
-
+    
     /// <summary>
     /// When the session was terminated (null if still active)
     /// </summary>
     public DateTime? TerminatedAt { get; private set; }
-
+    
     /// <summary>
     /// Reason for session termination
     /// </summary>

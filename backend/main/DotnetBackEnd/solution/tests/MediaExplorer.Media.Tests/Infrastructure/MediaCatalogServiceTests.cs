@@ -797,673 +797,677 @@ public sealed class MediaCatalogServiceTests
         recentlyAddedSecond.Items[0].Id.Should().NotBe(recentlyAddedFirst.Items[0].Id);
     }
 
-    [Fact]
-    public async Task AppendUploadChunkAsync_rejects_an_upload_owned_by_another_user()
+    /// <summary>Uploads, trash, favorites and moves: a nested class so xunit runs it in parallel with the tests above.</summary>
+    public sealed class UploadsAndTrash
     {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var ownerId = Guid.NewGuid();
-        var otherUserId = Guid.NewGuid();
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var upload = await service.CreateUploadAsync(ownerId, new CreateUploadReq
+        [Fact]
+        public async Task AppendUploadChunkAsync_rejects_an_upload_owned_by_another_user()
         {
-            Name = "private.txt",
-            MimeType = "text/plain",
-            SizeBytes = 3
-        }, CancellationToken.None);
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var ownerId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
 
-        var action = () => service.AppendUploadChunkAsync(otherUserId, upload.Id, 0, 2, 3,
-            new MemoryStream(Encoding.UTF8.GetBytes("bad")), CancellationToken.None);
-
-        await action.Should().ThrowAsync<KeyNotFoundException>().WithMessage("*not found*");
-        (await dbContext.UploadSessions.SingleAsync()).ReceivedBytes.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task RenameAndMove_folder_updates_its_catalog_metadata_and_rejects_cycles()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var parent = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "Parent" }, CancellationToken.None);
-        var child = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "Child", ParentId = parent.Id }, CancellationToken.None);
-
-        var renamed = await service.RenameItemAsync(userId, child.Id, new RenameItemReq { Name = " Renamed child " }, CancellationToken.None);
-        renamed.Name.Should().Be("Renamed child");
-
-        var cycle = () => service.MoveItemAsync(userId, parent.Id, new MoveItemReq { ParentId = child.Id }, CancellationToken.None);
-        await cycle.Should().ThrowAsync<ArgumentException>().WithMessage("*descendants*");
-
-        var moved = await service.MoveItemAsync(userId, child.Id, new MoveItemReq { ParentId = null }, CancellationToken.None);
-        moved.ParentId.Should().Be(
-            (await dbContext.Folders.SingleAsync(candidate => candidate.SystemRole == "documents_root")).Id);
-        (await service.GetItemAsync(userId, child.Id, CancellationToken.None)).Name.Should().Be("Renamed child");
-    }
-
-    [Fact]
-    public async Task SetFavoriteAsync_is_user_scoped_and_is_returned_in_file_queries()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var ownerId = Guid.NewGuid();
-        var otherUserId = Guid.NewGuid();
-        var upload = await CreateAndFillUploadAsync(harness, ownerId, Encoding.UTF8.GetBytes("favorite"));
-        MediaItemRes file;
-
-        await using (var dbContext = harness.CreateDbContext())
-        {
+            await using var dbContext = harness.CreateDbContext();
             var service = harness.CreateService(dbContext);
-            var folder = await service.CreateFolderAsync(ownerId, new CreateFolderReq { Name = "Favorite folder" }, CancellationToken.None);
-            var nestedFolder = await service.CreateFolderAsync(ownerId, new CreateFolderReq { Name = "Nested favorite", ParentId = folder.Id }, CancellationToken.None);
-            file = await service.CompleteUploadAsync(ownerId, upload.Id, new CompleteUploadReq { Sha256 = Hash(Encoding.UTF8.GetBytes("favorite")) }, CancellationToken.None);
-            var favorite = await service.SetFavoriteAsync(ownerId, file.Id, new SetFavoriteReq { Favorite = true }, CancellationToken.None);
-            favorite.Favorite.Should().BeTrue();
-            var folderFavorite = await service.SetFavoriteAsync(ownerId, folder.Id, new SetFavoriteReq { Favorite = true }, CancellationToken.None);
-            folderFavorite.Favorite.Should().BeTrue();
-            await service.SetFavoriteAsync(ownerId, nestedFolder.Id, new SetFavoriteReq { Favorite = true }, CancellationToken.None);
-            (await service.QueryFilesAsync(ownerId, new FileQueryOptions { Limit = 100 }, CancellationToken.None)).Items.Single(item => item.Id == file.Id).Favorite.Should().BeTrue();
-            (await service.QueryFilesAsync(ownerId, new FileQueryOptions { Limit = 100 }, CancellationToken.None)).Items.Single(item => item.Id == folder.Id).Favorite.Should().BeTrue();
-            var rootFavorites = (await service.QueryFilesAsync(ownerId, new FileQueryOptions { Favorite = true, Limit = 100 }, CancellationToken.None)).Items;
-            rootFavorites.Should().Contain(item => item.Id == file.Id);
-            rootFavorites.Should().Contain(item => item.Id == folder.Id);
-            rootFavorites.Should().NotContain(item => item.Id == nestedFolder.Id);
-            var nestedFavorites = (await service.QueryFilesAsync(ownerId, new FileQueryOptions { FolderId = folder.Id, Favorite = true, Limit = 100 }, CancellationToken.None)).Items;
-            nestedFavorites.Should().ContainSingle(item => item.Id == nestedFolder.Id);
+            var upload = await service.CreateUploadAsync(ownerId, new CreateUploadReq
+            {
+                Name = "private.txt",
+                MimeType = "text/plain",
+                SizeBytes = 3
+            }, CancellationToken.None);
+
+            var action = () => service.AppendUploadChunkAsync(otherUserId, upload.Id, 0, 2, 3,
+                new MemoryStream(Encoding.UTF8.GetBytes("bad")), CancellationToken.None);
+
+            await action.Should().ThrowAsync<KeyNotFoundException>().WithMessage("*not found*");
+            (await dbContext.UploadSessions.SingleAsync()).ReceivedBytes.Should().Be(0);
         }
 
-        await using (var otherContext = harness.CreateDbContext())
+        [Fact]
+        public async Task RenameAndMove_folder_updates_its_catalog_metadata_and_rejects_cycles()
         {
-            var otherService = harness.CreateService(otherContext);
-            var action = () => otherService.SetFavoriteAsync(otherUserId, file.Id, new SetFavoriteReq { Favorite = true }, CancellationToken.None);
-            await action.Should().ThrowAsync<KeyNotFoundException>();
-        }
-    }
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
 
-    [Fact]
-    public async Task TrashAndRestore_folder_hides_and_restores_its_descendant_files_until_manually_cleared()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("inside the folder");
-        MediaItemRes folder;
-        MediaItemRes file;
-
-        await using (var dbContext = harness.CreateDbContext())
-        {
+            await using var dbContext = harness.CreateDbContext();
             var service = harness.CreateService(dbContext);
-            folder = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "Trips" }, CancellationToken.None);
-            var created = await service.CreateUploadAsync(userId, new CreateUploadReq { Name = "photo.txt", MimeType = "text/plain", SizeBytes = bytes.Length, ParentId = folder.Id }, CancellationToken.None);
-            await service.AppendUploadChunkAsync(userId, created.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
-            file = await service.CompleteUploadAsync(userId, created.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
+            var parent = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "Parent" }, CancellationToken.None);
+            var child = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "Child", ParentId = parent.Id }, CancellationToken.None);
 
-            var trashed = await service.TrashItemAsync(userId, folder.Id, CancellationToken.None);
-            trashed.TrashedAt.Should().NotBeNull();
-            (await service.QueryFilesAsync(userId, new FileQueryOptions { Limit = 100 }, CancellationToken.None)).Items.Should().BeEmpty();
-            (await service.BrowseTrashAsync(userId, null, 100, "all", "name_asc", CancellationToken.None)).Items.Should().ContainSingle(item => item.Id == folder.Id);
-            (await service.GetItemAsync(userId, file.Id, CancellationToken.None)).TrashedAt.Should().NotBeNull();
+            var renamed = await service.RenameItemAsync(userId, child.Id, new RenameItemReq { Name = " Renamed child " }, CancellationToken.None);
+            renamed.Name.Should().Be("Renamed child");
 
-            var restored = await service.RestoreItemAsync(userId, folder.Id, CancellationToken.None);
-            restored.TrashedAt.Should().BeNull();
-            (await service.GetItemAsync(userId, file.Id, CancellationToken.None)).TrashedAt.Should().BeNull();
+            var cycle = () => service.MoveItemAsync(userId, parent.Id, new MoveItemReq { ParentId = child.Id }, CancellationToken.None);
+            await cycle.Should().ThrowAsync<ArgumentException>().WithMessage("*descendants*");
+
+            var moved = await service.MoveItemAsync(userId, child.Id, new MoveItemReq { ParentId = null }, CancellationToken.None);
+            moved.ParentId.Should().Be(
+                (await dbContext.Folders.SingleAsync(candidate => candidate.SystemRole == "documents_root")).Id);
+            (await service.GetItemAsync(userId, child.Id, CancellationToken.None)).Name.Should().Be("Renamed child");
         }
-    }
 
-    [Fact]
-    public async Task ClearTrashAsync_permanently_removes_unshared_original_but_preserves_active_original()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("permanently remove this catalog item");
-        var activeBytes = Encoding.UTF8.GetBytes("keep this active catalog item");
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var folder = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "To remove" }, CancellationToken.None);
-        var upload = await service.CreateUploadAsync(userId, new CreateUploadReq
+        [Fact]
+        public async Task SetFavoriteAsync_is_user_scoped_and_is_returned_in_file_queries()
         {
-            Name = "gone.txt",
-            MimeType = "text/plain",
-            SizeBytes = bytes.Length,
-            ParentId = folder.Id
-        }, CancellationToken.None);
-        await service.AppendUploadChunkAsync(userId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
-        var file = await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
-        var activeUpload = await service.CreateUploadAsync(userId, new CreateUploadReq
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var ownerId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+            var upload = await CreateAndFillUploadAsync(harness, ownerId, Encoding.UTF8.GetBytes("favorite"));
+            MediaItemRes file;
+
+            await using (var dbContext = harness.CreateDbContext())
+            {
+                var service = harness.CreateService(dbContext);
+                var folder = await service.CreateFolderAsync(ownerId, new CreateFolderReq { Name = "Favorite folder" }, CancellationToken.None);
+                var nestedFolder = await service.CreateFolderAsync(ownerId, new CreateFolderReq { Name = "Nested favorite", ParentId = folder.Id }, CancellationToken.None);
+                file = await service.CompleteUploadAsync(ownerId, upload.Id, new CompleteUploadReq { Sha256 = Hash(Encoding.UTF8.GetBytes("favorite")) }, CancellationToken.None);
+                var favorite = await service.SetFavoriteAsync(ownerId, file.Id, new SetFavoriteReq { Favorite = true }, CancellationToken.None);
+                favorite.Favorite.Should().BeTrue();
+                var folderFavorite = await service.SetFavoriteAsync(ownerId, folder.Id, new SetFavoriteReq { Favorite = true }, CancellationToken.None);
+                folderFavorite.Favorite.Should().BeTrue();
+                await service.SetFavoriteAsync(ownerId, nestedFolder.Id, new SetFavoriteReq { Favorite = true }, CancellationToken.None);
+                (await service.QueryFilesAsync(ownerId, new FileQueryOptions { Limit = 100 }, CancellationToken.None)).Items.Single(item => item.Id == file.Id).Favorite.Should().BeTrue();
+                (await service.QueryFilesAsync(ownerId, new FileQueryOptions { Limit = 100 }, CancellationToken.None)).Items.Single(item => item.Id == folder.Id).Favorite.Should().BeTrue();
+                var rootFavorites = (await service.QueryFilesAsync(ownerId, new FileQueryOptions { Favorite = true, Limit = 100 }, CancellationToken.None)).Items;
+                rootFavorites.Should().Contain(item => item.Id == file.Id);
+                rootFavorites.Should().Contain(item => item.Id == folder.Id);
+                rootFavorites.Should().NotContain(item => item.Id == nestedFolder.Id);
+                var nestedFavorites = (await service.QueryFilesAsync(ownerId, new FileQueryOptions { FolderId = folder.Id, Favorite = true, Limit = 100 }, CancellationToken.None)).Items;
+                nestedFavorites.Should().ContainSingle(item => item.Id == nestedFolder.Id);
+            }
+
+            await using (var otherContext = harness.CreateDbContext())
+            {
+                var otherService = harness.CreateService(otherContext);
+                var action = () => otherService.SetFavoriteAsync(otherUserId, file.Id, new SetFavoriteReq { Favorite = true }, CancellationToken.None);
+                await action.Should().ThrowAsync<KeyNotFoundException>();
+            }
+        }
+
+        [Fact]
+        public async Task TrashAndRestore_folder_hides_and_restores_its_descendant_files_until_manually_cleared()
         {
-            Name = "keep.txt",
-            MimeType = "text/plain",
-            SizeBytes = activeBytes.Length,
-            UseDefaultDocumentsFolder = true
-        }, CancellationToken.None);
-        await service.AppendUploadChunkAsync(userId, activeUpload.Id, 0, activeBytes.Length - 1, activeBytes.Length, new MemoryStream(activeBytes), CancellationToken.None);
-        var activeFile = await service.CompleteUploadAsync(userId, activeUpload.Id, new CompleteUploadReq { Sha256 = Hash(activeBytes) }, CancellationToken.None);
-        var cache = new OriginalCache(harness.Configuration);
-        await cache.EnsureAsync(Hash(bytes), bytes.Length, (destination, token) => destination.WriteAsync(bytes, token).AsTask(), CancellationToken.None);
-        var thumbnailDirectory = Path.Combine(harness.RootDirectory, "thumbnails", "sha256", Hash(bytes));
-        Directory.CreateDirectory(thumbnailDirectory);
-        await File.WriteAllBytesAsync(Path.Combine(thumbnailDirectory, "320.webp"), [1, 2, 3]);
-        await service.TrashItemAsync(userId, folder.Id, CancellationToken.None);
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("inside the folder");
+            MediaItemRes folder;
+            MediaItemRes file;
 
-        var rejected = await harness.CreateResultService(dbContext).ClearTrashAsync(userId, new ClearTrashReq(), CancellationToken.None);
-        rejected.IsFailure.Should().BeTrue();
+            await using (var dbContext = harness.CreateDbContext())
+            {
+                var service = harness.CreateService(dbContext);
+                folder = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "Trips" }, CancellationToken.None);
+                var created = await service.CreateUploadAsync(userId, new CreateUploadReq { Name = "photo.txt", MimeType = "text/plain", SizeBytes = bytes.Length, ParentId = folder.Id }, CancellationToken.None);
+                await service.AppendUploadChunkAsync(userId, created.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
+                file = await service.CompleteUploadAsync(userId, created.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
 
-        var summary = await service.GetTrashSummaryAsync(userId, CancellationToken.None);
-        summary.FileCount.Should().Be(1);
-        summary.FolderCount.Should().Be(1);
-        summary.OriginalCount.Should().Be(1);
-        summary.OriginalBytes.Should().Be(bytes.Length);
-        var staleCount = await harness.CreateResultService(dbContext).ClearTrashAsync(userId, new ClearTrashReq
+                var trashed = await service.TrashItemAsync(userId, folder.Id, CancellationToken.None);
+                trashed.TrashedAt.Should().NotBeNull();
+                (await service.QueryFilesAsync(userId, new FileQueryOptions { Limit = 100 }, CancellationToken.None)).Items.Should().BeEmpty();
+                (await service.BrowseTrashAsync(userId, null, 100, "all", "name_asc", CancellationToken.None)).Items.Should().ContainSingle(item => item.Id == folder.Id);
+                (await service.GetItemAsync(userId, file.Id, CancellationToken.None)).TrashedAt.Should().NotBeNull();
+
+                var restored = await service.RestoreItemAsync(userId, folder.Id, CancellationToken.None);
+                restored.TrashedAt.Should().BeNull();
+                (await service.GetItemAsync(userId, file.Id, CancellationToken.None)).TrashedAt.Should().BeNull();
+            }
+        }
+
+        [Fact]
+        public async Task ClearTrashAsync_permanently_removes_unshared_original_but_preserves_active_original()
         {
-            Confirmed = true,
-            ConfirmationPhrase = "DELETE",
-            ExpectedFileCount = summary.FileCount + 1,
-            ExpectedFolderCount = summary.FolderCount,
-            ExpectedOriginalCount = summary.OriginalCount,
-            ExpectedOriginalBytes = summary.OriginalBytes
-        }, CancellationToken.None);
-        staleCount.IsFailure.Should().BeTrue();
-        (await dbContext.Files.AnyAsync(candidate => candidate.Id == file.Id)).Should().BeTrue();
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("permanently remove this catalog item");
+            var activeBytes = Encoding.UTF8.GetBytes("keep this active catalog item");
 
-        var result = await service.ClearTrashAsync(userId, new ClearTrashReq
-        {
-            Confirmed = true,
-            ConfirmationPhrase = "DELETE",
-            ExpectedFileCount = summary.FileCount,
-            ExpectedFolderCount = summary.FolderCount,
-            ExpectedOriginalCount = summary.OriginalCount,
-            ExpectedOriginalBytes = summary.OriginalBytes
-        }, CancellationToken.None);
-
-        result.DeletedFolderCount.Should().Be(1);
-        result.DeletedFileCount.Should().Be(1);
-        result.DeletedOriginalCount.Should().Be(1);
-        result.DeletedOriginalBytes.Should().Be(bytes.Length);
-        result.FailedOriginalCount.Should().Be(0);
-        (await service.BrowseTrashAsync(userId, null, 100, "all", "name_asc", CancellationToken.None)).Items.Should().BeEmpty();
-        (await dbContext.Files.AnyAsync(candidate => candidate.Id == file.Id)).Should().BeFalse();
-        (await dbContext.Files.AnyAsync(candidate => candidate.Id == activeFile.Id)).Should().BeTrue();
-        (await dbContext.FileVersions.CountAsync()).Should().Be(1);
-        (await dbContext.Blobs.CountAsync()).Should().Be(1);
-        harness.ObjectStoreFactory.Originals.Should().NotContainKey(Hash(bytes));
-        harness.ObjectStoreFactory.Originals.Should().ContainKey(Hash(activeBytes));
-        harness.ObjectStoreFactory.ReconciliationInventoryCalls.Should().Be(0);
-        File.Exists(cache.PathFor(Hash(bytes))).Should().BeFalse();
-        Directory.Exists(thumbnailDirectory).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task ClearTrashAsync_never_deletes_an_original_referenced_by_an_active_deduplicated_file()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("shared original");
-        var hash = Hash(bytes);
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var files = new List<MediaItemRes>();
-        foreach (var name in new[] { "trash-me.txt", "keep-me.txt" })
-        {
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateService(dbContext);
+            var folder = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "To remove" }, CancellationToken.None);
             var upload = await service.CreateUploadAsync(userId, new CreateUploadReq
             {
-                Name = name,
+                Name = "gone.txt",
+                MimeType = "text/plain",
+                SizeBytes = bytes.Length,
+                ParentId = folder.Id
+            }, CancellationToken.None);
+            await service.AppendUploadChunkAsync(userId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
+            var file = await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
+            var activeUpload = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                Name = "keep.txt",
+                MimeType = "text/plain",
+                SizeBytes = activeBytes.Length,
+                UseDefaultDocumentsFolder = true
+            }, CancellationToken.None);
+            await service.AppendUploadChunkAsync(userId, activeUpload.Id, 0, activeBytes.Length - 1, activeBytes.Length, new MemoryStream(activeBytes), CancellationToken.None);
+            var activeFile = await service.CompleteUploadAsync(userId, activeUpload.Id, new CompleteUploadReq { Sha256 = Hash(activeBytes) }, CancellationToken.None);
+            var cache = new OriginalCache(harness.Configuration);
+            await cache.EnsureAsync(Hash(bytes), bytes.Length, (destination, token) => destination.WriteAsync(bytes, token).AsTask(), CancellationToken.None);
+            var thumbnailDirectory = Path.Combine(harness.RootDirectory, "thumbnails", "sha256", Hash(bytes));
+            Directory.CreateDirectory(thumbnailDirectory);
+            await File.WriteAllBytesAsync(Path.Combine(thumbnailDirectory, "320.webp"), [1, 2, 3]);
+            await service.TrashItemAsync(userId, folder.Id, CancellationToken.None);
+
+            var rejected = await harness.CreateResultService(dbContext).ClearTrashAsync(userId, new ClearTrashReq(), CancellationToken.None);
+            rejected.IsFailure.Should().BeTrue();
+
+            var summary = await service.GetTrashSummaryAsync(userId, CancellationToken.None);
+            summary.FileCount.Should().Be(1);
+            summary.FolderCount.Should().Be(1);
+            summary.OriginalCount.Should().Be(1);
+            summary.OriginalBytes.Should().Be(bytes.Length);
+            var staleCount = await harness.CreateResultService(dbContext).ClearTrashAsync(userId, new ClearTrashReq
+            {
+                Confirmed = true,
+                ConfirmationPhrase = "DELETE",
+                ExpectedFileCount = summary.FileCount + 1,
+                ExpectedFolderCount = summary.FolderCount,
+                ExpectedOriginalCount = summary.OriginalCount,
+                ExpectedOriginalBytes = summary.OriginalBytes
+            }, CancellationToken.None);
+            staleCount.IsFailure.Should().BeTrue();
+            (await dbContext.Files.AnyAsync(candidate => candidate.Id == file.Id)).Should().BeTrue();
+
+            var result = await service.ClearTrashAsync(userId, new ClearTrashReq
+            {
+                Confirmed = true,
+                ConfirmationPhrase = "DELETE",
+                ExpectedFileCount = summary.FileCount,
+                ExpectedFolderCount = summary.FolderCount,
+                ExpectedOriginalCount = summary.OriginalCount,
+                ExpectedOriginalBytes = summary.OriginalBytes
+            }, CancellationToken.None);
+
+            result.DeletedFolderCount.Should().Be(1);
+            result.DeletedFileCount.Should().Be(1);
+            result.DeletedOriginalCount.Should().Be(1);
+            result.DeletedOriginalBytes.Should().Be(bytes.Length);
+            result.FailedOriginalCount.Should().Be(0);
+            (await service.BrowseTrashAsync(userId, null, 100, "all", "name_asc", CancellationToken.None)).Items.Should().BeEmpty();
+            (await dbContext.Files.AnyAsync(candidate => candidate.Id == file.Id)).Should().BeFalse();
+            (await dbContext.Files.AnyAsync(candidate => candidate.Id == activeFile.Id)).Should().BeTrue();
+            (await dbContext.FileVersions.CountAsync()).Should().Be(1);
+            (await dbContext.Blobs.CountAsync()).Should().Be(1);
+            harness.ObjectStoreFactory.Originals.Should().NotContainKey(Hash(bytes));
+            harness.ObjectStoreFactory.Originals.Should().ContainKey(Hash(activeBytes));
+            harness.ObjectStoreFactory.ReconciliationInventoryCalls.Should().Be(0);
+            File.Exists(cache.PathFor(Hash(bytes))).Should().BeFalse();
+            Directory.Exists(thumbnailDirectory).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task ClearTrashAsync_never_deletes_an_original_referenced_by_an_active_deduplicated_file()
+        {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("shared original");
+            var hash = Hash(bytes);
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateService(dbContext);
+            var files = new List<MediaItemRes>();
+            foreach (var name in new[] { "trash-me.txt", "keep-me.txt" })
+            {
+                var upload = await service.CreateUploadAsync(userId, new CreateUploadReq
+                {
+                    Name = name,
+                    MimeType = "text/plain",
+                    SizeBytes = bytes.Length,
+                    UseDefaultDocumentsFolder = true
+                }, CancellationToken.None);
+                await service.AppendUploadChunkAsync(userId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
+                files.Add(await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = hash }, CancellationToken.None));
+            }
+            await service.TrashItemAsync(userId, files[0].Id, CancellationToken.None);
+
+            var summary = await service.GetTrashSummaryAsync(userId, CancellationToken.None);
+            summary.FileCount.Should().Be(1);
+            summary.OriginalCount.Should().Be(0);
+            var result = await service.ClearTrashAsync(userId, new ClearTrashReq
+            {
+                Confirmed = true,
+                ConfirmationPhrase = "DELETE",
+                ExpectedFileCount = summary.FileCount,
+                ExpectedFolderCount = summary.FolderCount,
+                ExpectedOriginalCount = summary.OriginalCount,
+                ExpectedOriginalBytes = summary.OriginalBytes
+            }, CancellationToken.None);
+
+            result.DeletedFileCount.Should().Be(1);
+            result.DeletedOriginalCount.Should().Be(0);
+            (await dbContext.Files.AnyAsync(file => file.Id == files[1].Id)).Should().BeTrue();
+            (await dbContext.Blobs.CountAsync()).Should().Be(1);
+            harness.ObjectStoreFactory.Originals.Should().ContainKey(hash);
+            harness.ObjectStoreFactory.PermanentDeleteCalls.Should().Be(0);
+        }
+
+        [Fact]
+        public async Task ClearTrashAsync_sends_failed_storage_deletion_to_developer_maintenance_not_a_later_trash_clear()
+        {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("retry permanent deletion");
+            var hash = Hash(bytes);
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateService(dbContext);
+            var upload = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                Name = "retry.txt",
                 MimeType = "text/plain",
                 SizeBytes = bytes.Length,
                 UseDefaultDocumentsFolder = true
             }, CancellationToken.None);
             await service.AppendUploadChunkAsync(userId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
-            files.Add(await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = hash }, CancellationToken.None));
-        }
-        await service.TrashItemAsync(userId, files[0].Id, CancellationToken.None);
+            var file = await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = hash }, CancellationToken.None);
+            await service.TrashItemAsync(userId, file.Id, CancellationToken.None);
 
-        var summary = await service.GetTrashSummaryAsync(userId, CancellationToken.None);
-        summary.FileCount.Should().Be(1);
-        summary.OriginalCount.Should().Be(0);
-        var result = await service.ClearTrashAsync(userId, new ClearTrashReq
-        {
-            Confirmed = true,
-            ConfirmationPhrase = "DELETE",
-            ExpectedFileCount = summary.FileCount,
-            ExpectedFolderCount = summary.FolderCount,
-            ExpectedOriginalCount = summary.OriginalCount,
-            ExpectedOriginalBytes = summary.OriginalBytes
-        }, CancellationToken.None);
-
-        result.DeletedFileCount.Should().Be(1);
-        result.DeletedOriginalCount.Should().Be(0);
-        (await dbContext.Files.AnyAsync(file => file.Id == files[1].Id)).Should().BeTrue();
-        (await dbContext.Blobs.CountAsync()).Should().Be(1);
-        harness.ObjectStoreFactory.Originals.Should().ContainKey(hash);
-        harness.ObjectStoreFactory.PermanentDeleteCalls.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task ClearTrashAsync_sends_failed_storage_deletion_to_developer_maintenance_not_a_later_trash_clear()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("retry permanent deletion");
-        var hash = Hash(bytes);
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var upload = await service.CreateUploadAsync(userId, new CreateUploadReq
-        {
-            Name = "retry.txt",
-            MimeType = "text/plain",
-            SizeBytes = bytes.Length,
-            UseDefaultDocumentsFolder = true
-        }, CancellationToken.None);
-        await service.AppendUploadChunkAsync(userId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
-        var file = await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = hash }, CancellationToken.None);
-        await service.TrashItemAsync(userId, file.Id, CancellationToken.None);
-
-        var summary = await service.GetTrashSummaryAsync(userId, CancellationToken.None);
-        harness.ObjectStoreFactory.FailNextPermanentDelete = true;
-        var first = await service.ClearTrashAsync(userId, new ClearTrashReq
-        {
-            Confirmed = true,
-            ConfirmationPhrase = "DELETE",
-            ExpectedFileCount = summary.FileCount,
-            ExpectedFolderCount = summary.FolderCount,
-            ExpectedOriginalCount = summary.OriginalCount,
-            ExpectedOriginalBytes = summary.OriginalBytes
-        }, CancellationToken.None);
-
-        first.FailedOriginalCount.Should().Be(1);
-        harness.ObjectStoreFactory.Originals.Should().ContainKey(hash);
-        (await dbContext.Blobs.SingleAsync()).LifecycleState.Should().Be(Blob.PendingPermanentDeletionLifecycleState);
-
-        var postTrashSummary = await service.GetTrashSummaryAsync(userId, CancellationToken.None);
-        postTrashSummary.FileCount.Should().Be(0);
-        postTrashSummary.OriginalCount.Should().Be(0);
-
-        var reconciliation = new StorageReconciliationService(dbContext, harness.ObjectStoreFactory, new OriginalCache(harness.Configuration), harness.Configuration, NullLogger<StorageReconciliationService>.Instance);
-        var report = await reconciliation.ReconcileAsync(CancellationToken.None);
-        report.CleanupCandidates.Should().ContainSingle(candidate => candidate.Kind == StorageCleanupCandidate.OrphanedCatalogBlobKind);
-        var candidate = report.CleanupCandidates.Single();
-        var cleanup = await reconciliation.CleanupAsync(new CleanupStorageInconsistenciesReq
-        {
-            Confirmed = true,
-            ConfirmationPhrase = "DELETE INCONSISTENCIES",
-            ExpectedCandidateCount = 1,
-            CandidateIds = [candidate.Id]
-        }, "verified-test-backup", CancellationToken.None);
-
-        cleanup.IsSuccess.Should().BeTrue();
-        cleanup.SuccessValue.DeletedCandidateCount.Should().Be(1);
-        cleanup.SuccessValue.FailedCandidateCount.Should().Be(0);
-        (await dbContext.Blobs.AnyAsync()).Should().BeFalse();
-        harness.ObjectStoreFactory.Originals.Should().NotContainKey(hash);
-    }
-
-    [Fact]
-    public async Task Trash_browse_returns_an_individually_trashed_file_from_a_protected_folder_as_a_root()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("trash root file");
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var upload = await service.CreateUploadAsync(userId, new CreateUploadReq
-        {
-            Name = "trashed.txt",
-            MimeType = "text/plain",
-            SizeBytes = bytes.Length,
-            UseDefaultDocumentsFolder = true
-        }, CancellationToken.None);
-        await service.AppendUploadChunkAsync(userId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
-        var file = await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
-
-        await service.TrashItemAsync(userId, file.Id, CancellationToken.None);
-
-        var trash = await service.BrowseTrashAsync(userId, null, 100, "all", "name_asc", CancellationToken.None);
-        trash.Items.Should().ContainSingle(item => item.Id == file.Id);
-    }
-
-    [Fact]
-    public async Task Trash_thumbnail_remains_available_to_its_owner_without_exposing_original_content()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var ownerId = Guid.NewGuid();
-        var otherUserId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("image bytes are not decoded when the thumbnail is already cached");
-        var checksum = Hash(bytes);
-        var cachedThumbnail = new byte[] { 1, 2, 3, 4 };
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var upload = await service.CreateUploadAsync(ownerId, new CreateUploadReq
-        {
-            Name = "trashed.jpg",
-            MimeType = "image/jpeg",
-            SizeBytes = bytes.Length,
-            UseDefaultMediaFolder = true
-        }, CancellationToken.None);
-        await service.AppendUploadChunkAsync(ownerId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
-        var file = await service.CompleteUploadAsync(ownerId, upload.Id, new CompleteUploadReq { Sha256 = checksum }, CancellationToken.None);
-        var thumbnailDirectory = Path.Combine(harness.RootDirectory, "thumbnails", "sha256", checksum);
-        Directory.CreateDirectory(thumbnailDirectory);
-        await File.WriteAllBytesAsync(Path.Combine(thumbnailDirectory, "320.webp"), cachedThumbnail);
-
-        await service.TrashItemAsync(ownerId, file.Id, CancellationToken.None);
-
-        using var thumbnail = await service.OpenThumbnailAsync(ownerId, file.Id, "md", CancellationToken.None);
-        await using var thumbnailBytes = new MemoryStream();
-        await thumbnail.Content.CopyToAsync(thumbnailBytes);
-        thumbnailBytes.ToArray().Should().Equal(cachedThumbnail);
-
-        var resultService = harness.CreateResultService(dbContext);
-        (await resultService.OpenContentAsync(ownerId, file.Id, null, null, CancellationToken.None))
-            .ErrorValue.ErrorCode.Should().Be(MediaErrors.NotFoundCode);
-        (await resultService.OpenThumbnailAsync(otherUserId, file.Id, "md", CancellationToken.None))
-            .ErrorValue.ErrorCode.Should().Be(MediaErrors.NotFoundCode);
-    }
-
-    [Fact]
-    public async Task Upload_name_conflicts_are_reported_and_require_explicit_keep_both()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("same visible name");
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateResultService(dbContext);
-        var firstUpload = await service.CreateUploadAsync(userId, new CreateUploadReq
-        {
-            Name = "camera.jpg",
-            MimeType = "image/jpeg",
-            SizeBytes = bytes.Length,
-            UseDefaultMediaFolder = true
-        }, CancellationToken.None);
-        firstUpload.IsSuccess.Should().BeTrue();
-        await service.AppendUploadChunkAsync(userId, firstUpload.SuccessValue.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
-        var first = await service.CompleteUploadAsync(userId, firstUpload.SuccessValue.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
-        first.IsSuccess.Should().BeTrue();
-
-        var conflicts = await service.CheckNameConflictsAsync(userId, new CheckUploadNameConflictsReq
-        {
-            Names = ["camera.jpg"],
-            UseDefaultMediaFolder = true
-        }, CancellationToken.None);
-        conflicts.IsSuccess.Should().BeTrue();
-        conflicts.SuccessValue.Names.Should().ContainSingle().Which.Should().Be("camera.jpg");
-
-        var rejected = await service.CreateUploadAsync(userId, new CreateUploadReq
-        {
-            Name = "camera.jpg",
-            MimeType = "image/jpeg",
-            SizeBytes = bytes.Length,
-            UseDefaultMediaFolder = true
-        }, CancellationToken.None);
-        rejected.IsFailure.Should().BeTrue();
-        rejected.ErrorValue.ErrorCode.Should().Be(MediaErrors.ConflictCode);
-        rejected.ErrorValue.Message.Should().Be("An item with this name already exists.");
-
-        var allowed = await service.CreateUploadAsync(userId, new CreateUploadReq
-        {
-            Name = "camera.jpg",
-            MimeType = "image/jpeg",
-            SizeBytes = bytes.Length,
-            UseDefaultMediaFolder = true,
-            AllowNameConflict = true
-        }, CancellationToken.None);
-        allowed.IsSuccess.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Upload_completion_rechecks_late_name_conflicts_without_retransmitting_bytes()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var firstBytes = Encoding.UTF8.GetBytes("first camera file");
-        var secondBytes = Encoding.UTF8.GetBytes("second camera file");
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateResultService(dbContext);
-        var first = await service.CreateUploadAsync(userId, new CreateUploadReq
-        {
-            Name = "camera.jpg",
-            MimeType = "image/jpeg",
-            SizeBytes = firstBytes.Length,
-            UseDefaultMediaFolder = true
-        }, CancellationToken.None);
-        var second = await service.CreateUploadAsync(userId, new CreateUploadReq
-        {
-            Name = "camera.jpg",
-            MimeType = "image/jpeg",
-            SizeBytes = secondBytes.Length,
-            UseDefaultMediaFolder = true
-        }, CancellationToken.None);
-        first.IsSuccess.Should().BeTrue();
-        second.IsSuccess.Should().BeTrue();
-        await service.AppendUploadChunkAsync(userId, first.SuccessValue.Id, 0, firstBytes.Length - 1, firstBytes.Length, new MemoryStream(firstBytes), CancellationToken.None);
-        await service.AppendUploadChunkAsync(userId, second.SuccessValue.Id, 0, secondBytes.Length - 1, secondBytes.Length, new MemoryStream(secondBytes), CancellationToken.None);
-
-        (await service.CompleteUploadAsync(userId, first.SuccessValue.Id, new CompleteUploadReq
-        {
-            Sha256 = Hash(firstBytes)
-        }, CancellationToken.None)).IsSuccess.Should().BeTrue();
-        var conflict = await service.CompleteUploadAsync(userId, second.SuccessValue.Id, new CompleteUploadReq
-        {
-            Sha256 = Hash(secondBytes)
-        }, CancellationToken.None);
-        conflict.IsFailure.Should().BeTrue();
-        conflict.ErrorValue.ErrorCode.Should().Be(MediaErrors.ConflictCode);
-
-        var keptBoth = await service.CompleteUploadAsync(userId, second.SuccessValue.Id, new CompleteUploadReq
-        {
-            Sha256 = Hash(secondBytes),
-            AllowNameConflict = true
-        }, CancellationToken.None);
-        keptBoth.IsSuccess.Should().BeTrue();
-        (await dbContext.Files.CountAsync(file => file.Name == "camera.jpg")).Should().Be(2);
-        harness.ObjectStoreFactory.PutCalls.Should().Be(2);
-    }
-
-    [Fact]
-    public async Task Upload_completion_reports_same_library_duplicate_originals_explicitly()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("same immutable original");
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateResultService(dbContext);
-
-        async Task<CompleteUploadRes> UploadAsync(string name)
-        {
-            var upload = (await service.CreateUploadAsync(userId, new CreateUploadReq
+            var summary = await service.GetTrashSummaryAsync(userId, CancellationToken.None);
+            harness.ObjectStoreFactory.FailNextPermanentDelete = true;
+            var first = await service.ClearTrashAsync(userId, new ClearTrashReq
             {
-                Name = name,
+                Confirmed = true,
+                ConfirmationPhrase = "DELETE",
+                ExpectedFileCount = summary.FileCount,
+                ExpectedFolderCount = summary.FolderCount,
+                ExpectedOriginalCount = summary.OriginalCount,
+                ExpectedOriginalBytes = summary.OriginalBytes
+            }, CancellationToken.None);
+
+            first.FailedOriginalCount.Should().Be(1);
+            harness.ObjectStoreFactory.Originals.Should().ContainKey(hash);
+            (await dbContext.Blobs.SingleAsync()).LifecycleState.Should().Be(Blob.PendingPermanentDeletionLifecycleState);
+
+            var postTrashSummary = await service.GetTrashSummaryAsync(userId, CancellationToken.None);
+            postTrashSummary.FileCount.Should().Be(0);
+            postTrashSummary.OriginalCount.Should().Be(0);
+
+            var reconciliation = new StorageReconciliationService(dbContext, harness.ObjectStoreFactory, new OriginalCache(harness.Configuration), harness.Configuration, NullLogger<StorageReconciliationService>.Instance);
+            var report = await reconciliation.ReconcileAsync(CancellationToken.None);
+            report.CleanupCandidates.Should().ContainSingle(candidate => candidate.Kind == StorageCleanupCandidate.OrphanedCatalogBlobKind);
+            var candidate = report.CleanupCandidates.Single();
+            var cleanup = await reconciliation.CleanupAsync(new CleanupStorageInconsistenciesReq
+            {
+                Confirmed = true,
+                ConfirmationPhrase = "DELETE INCONSISTENCIES",
+                ExpectedCandidateCount = 1,
+                CandidateIds = [candidate.Id]
+            }, "verified-test-backup", CancellationToken.None);
+
+            cleanup.IsSuccess.Should().BeTrue();
+            cleanup.SuccessValue.DeletedCandidateCount.Should().Be(1);
+            cleanup.SuccessValue.FailedCandidateCount.Should().Be(0);
+            (await dbContext.Blobs.AnyAsync()).Should().BeFalse();
+            harness.ObjectStoreFactory.Originals.Should().NotContainKey(hash);
+        }
+
+        [Fact]
+        public async Task Trash_browse_returns_an_individually_trashed_file_from_a_protected_folder_as_a_root()
+        {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("trash root file");
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateService(dbContext);
+            var upload = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                Name = "trashed.txt",
                 MimeType = "text/plain",
-                SizeBytes = bytes.Length
-            }, CancellationToken.None)).SuccessValue;
+                SizeBytes = bytes.Length,
+                UseDefaultDocumentsFolder = true
+            }, CancellationToken.None);
             await service.AppendUploadChunkAsync(userId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
-            return (await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq
-            {
-                Sha256 = Hash(bytes)
-            }, CancellationToken.None)).SuccessValue;
+            var file = await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
+
+            await service.TrashItemAsync(userId, file.Id, CancellationToken.None);
+
+            var trash = await service.BrowseTrashAsync(userId, null, 100, "all", "name_asc", CancellationToken.None);
+            trash.Items.Should().ContainSingle(item => item.Id == file.Id);
         }
 
-        (await UploadAsync("first.txt")).DuplicateState.Should().Be("none");
-        var duplicate = await UploadAsync("second.txt");
-        duplicate.DuplicateState.Should().Be("active");
-        duplicate.Item.Name.Should().Be("second.txt");
-        harness.ObjectStoreFactory.Originals.Should().ContainSingle();
-    }
-
-    [Fact]
-    public async Task Upload_status_is_owner_scoped_and_cancellation_removes_pending_staging()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var clientUploadId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("resume then cancel");
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateResultService(dbContext);
-        var created = await service.CreateUploadAsync(userId, new CreateUploadReq
+        [Fact]
+        public async Task Trash_thumbnail_remains_available_to_its_owner_without_exposing_original_content()
         {
-            ClientUploadId = clientUploadId,
-            Name = "cancel.txt",
-            MimeType = "text/plain",
-            SizeBytes = bytes.Length
-        }, CancellationToken.None);
-        created.IsSuccess.Should().BeTrue();
-        await service.AppendUploadChunkAsync(
-            userId,
-            created.SuccessValue.Id,
-            0,
-            5,
-            bytes.Length,
-            new MemoryStream(bytes[..6]),
-            CancellationToken.None);
-        var idempotentCreate = await service.CreateUploadAsync(userId, new CreateUploadReq
-        {
-            ClientUploadId = clientUploadId,
-            Name = "cancel.txt",
-            MimeType = "text/plain",
-            SizeBytes = bytes.Length
-        }, CancellationToken.None);
-        idempotentCreate.IsSuccess.Should().BeTrue();
-        idempotentCreate.SuccessValue.Id.Should().Be(created.SuccessValue.Id);
-        idempotentCreate.SuccessValue.ReceivedBytes.Should().Be(6);
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var ownerId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("image bytes are not decoded when the thumbnail is already cached");
+            var checksum = Hash(bytes);
+            var cachedThumbnail = new byte[] { 1, 2, 3, 4 };
 
-        var status = await service.GetUploadSessionAsync(userId, created.SuccessValue.Id, CancellationToken.None);
-        status.IsSuccess.Should().BeTrue();
-        status.SuccessValue.ReceivedBytes.Should().Be(6);
-        status.SuccessValue.SizeBytes.Should().Be(bytes.Length);
-        status.SuccessValue.State.Should().Be("pending");
-        (await service.GetUploadSessionAsync(Guid.NewGuid(), created.SuccessValue.Id, CancellationToken.None))
-            .ErrorValue.ErrorCode.Should().Be(MediaErrors.NotFoundCode);
-
-        var stagingFileName = (await dbContext.UploadSessions.SingleAsync()).StagingFileName;
-        File.Exists(Path.Combine(harness.StagingDirectory, stagingFileName)).Should().BeTrue();
-        (await service.CancelUploadAsync(userId, created.SuccessValue.Id, CancellationToken.None)).IsSuccess.Should().BeTrue();
-        (await dbContext.UploadSessions.CountAsync()).Should().Be(0);
-        File.Exists(Path.Combine(harness.StagingDirectory, stagingFileName)).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task Upload_can_resume_in_a_new_service_scope_and_complete_once()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("a resumable upload survives a service restart");
-        var checksum = Hash(bytes);
-        CreateUploadRes upload;
-
-        await using (var firstContext = harness.CreateDbContext())
-        {
-            var firstService = harness.CreateService(firstContext);
-            upload = await firstService.CreateUploadAsync(userId, new CreateUploadReq
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateService(dbContext);
+            var upload = await service.CreateUploadAsync(ownerId, new CreateUploadReq
             {
-                Name = "resume.txt",
+                Name = "trashed.jpg",
+                MimeType = "image/jpeg",
+                SizeBytes = bytes.Length,
+                UseDefaultMediaFolder = true
+            }, CancellationToken.None);
+            await service.AppendUploadChunkAsync(ownerId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
+            var file = await service.CompleteUploadAsync(ownerId, upload.Id, new CompleteUploadReq { Sha256 = checksum }, CancellationToken.None);
+            var thumbnailDirectory = Path.Combine(harness.RootDirectory, "thumbnails", "sha256", checksum);
+            Directory.CreateDirectory(thumbnailDirectory);
+            await File.WriteAllBytesAsync(Path.Combine(thumbnailDirectory, "320.webp"), cachedThumbnail);
+
+            await service.TrashItemAsync(ownerId, file.Id, CancellationToken.None);
+
+            using var thumbnail = await service.OpenThumbnailAsync(ownerId, file.Id, "md", CancellationToken.None);
+            await using var thumbnailBytes = new MemoryStream();
+            await thumbnail.Content.CopyToAsync(thumbnailBytes);
+            thumbnailBytes.ToArray().Should().Equal(cachedThumbnail);
+
+            var resultService = harness.CreateResultService(dbContext);
+            (await resultService.OpenContentAsync(ownerId, file.Id, null, null, CancellationToken.None))
+                .ErrorValue.ErrorCode.Should().Be(MediaErrors.NotFoundCode);
+            (await resultService.OpenThumbnailAsync(otherUserId, file.Id, "md", CancellationToken.None))
+                .ErrorValue.ErrorCode.Should().Be(MediaErrors.NotFoundCode);
+        }
+
+        [Fact]
+        public async Task Upload_name_conflicts_are_reported_and_require_explicit_keep_both()
+        {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("same visible name");
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateResultService(dbContext);
+            var firstUpload = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                Name = "camera.jpg",
+                MimeType = "image/jpeg",
+                SizeBytes = bytes.Length,
+                UseDefaultMediaFolder = true
+            }, CancellationToken.None);
+            firstUpload.IsSuccess.Should().BeTrue();
+            await service.AppendUploadChunkAsync(userId, firstUpload.SuccessValue.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
+            var first = await service.CompleteUploadAsync(userId, firstUpload.SuccessValue.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
+            first.IsSuccess.Should().BeTrue();
+
+            var conflicts = await service.CheckNameConflictsAsync(userId, new CheckUploadNameConflictsReq
+            {
+                Names = ["camera.jpg"],
+                UseDefaultMediaFolder = true
+            }, CancellationToken.None);
+            conflicts.IsSuccess.Should().BeTrue();
+            conflicts.SuccessValue.Names.Should().ContainSingle().Which.Should().Be("camera.jpg");
+
+            var rejected = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                Name = "camera.jpg",
+                MimeType = "image/jpeg",
+                SizeBytes = bytes.Length,
+                UseDefaultMediaFolder = true
+            }, CancellationToken.None);
+            rejected.IsFailure.Should().BeTrue();
+            rejected.ErrorValue.ErrorCode.Should().Be(MediaErrors.ConflictCode);
+            rejected.ErrorValue.Message.Should().Be("An item with this name already exists.");
+
+            var allowed = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                Name = "camera.jpg",
+                MimeType = "image/jpeg",
+                SizeBytes = bytes.Length,
+                UseDefaultMediaFolder = true,
+                AllowNameConflict = true
+            }, CancellationToken.None);
+            allowed.IsSuccess.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task Upload_completion_rechecks_late_name_conflicts_without_retransmitting_bytes()
+        {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var firstBytes = Encoding.UTF8.GetBytes("first camera file");
+            var secondBytes = Encoding.UTF8.GetBytes("second camera file");
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateResultService(dbContext);
+            var first = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                Name = "camera.jpg",
+                MimeType = "image/jpeg",
+                SizeBytes = firstBytes.Length,
+                UseDefaultMediaFolder = true
+            }, CancellationToken.None);
+            var second = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                Name = "camera.jpg",
+                MimeType = "image/jpeg",
+                SizeBytes = secondBytes.Length,
+                UseDefaultMediaFolder = true
+            }, CancellationToken.None);
+            first.IsSuccess.Should().BeTrue();
+            second.IsSuccess.Should().BeTrue();
+            await service.AppendUploadChunkAsync(userId, first.SuccessValue.Id, 0, firstBytes.Length - 1, firstBytes.Length, new MemoryStream(firstBytes), CancellationToken.None);
+            await service.AppendUploadChunkAsync(userId, second.SuccessValue.Id, 0, secondBytes.Length - 1, secondBytes.Length, new MemoryStream(secondBytes), CancellationToken.None);
+
+            (await service.CompleteUploadAsync(userId, first.SuccessValue.Id, new CompleteUploadReq
+            {
+                Sha256 = Hash(firstBytes)
+            }, CancellationToken.None)).IsSuccess.Should().BeTrue();
+            var conflict = await service.CompleteUploadAsync(userId, second.SuccessValue.Id, new CompleteUploadReq
+            {
+                Sha256 = Hash(secondBytes)
+            }, CancellationToken.None);
+            conflict.IsFailure.Should().BeTrue();
+            conflict.ErrorValue.ErrorCode.Should().Be(MediaErrors.ConflictCode);
+
+            var keptBoth = await service.CompleteUploadAsync(userId, second.SuccessValue.Id, new CompleteUploadReq
+            {
+                Sha256 = Hash(secondBytes),
+                AllowNameConflict = true
+            }, CancellationToken.None);
+            keptBoth.IsSuccess.Should().BeTrue();
+            (await dbContext.Files.CountAsync(file => file.Name == "camera.jpg")).Should().Be(2);
+            harness.ObjectStoreFactory.PutCalls.Should().Be(2);
+        }
+
+        [Fact]
+        public async Task Upload_completion_reports_same_library_duplicate_originals_explicitly()
+        {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("same immutable original");
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateResultService(dbContext);
+
+            async Task<CompleteUploadRes> UploadAsync(string name)
+            {
+                var upload = (await service.CreateUploadAsync(userId, new CreateUploadReq
+                {
+                    Name = name,
+                    MimeType = "text/plain",
+                    SizeBytes = bytes.Length
+                }, CancellationToken.None)).SuccessValue;
+                await service.AppendUploadChunkAsync(userId, upload.Id, 0, bytes.Length - 1, bytes.Length, new MemoryStream(bytes), CancellationToken.None);
+                return (await service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq
+                {
+                    Sha256 = Hash(bytes)
+                }, CancellationToken.None)).SuccessValue;
+            }
+
+            (await UploadAsync("first.txt")).DuplicateState.Should().Be("none");
+            var duplicate = await UploadAsync("second.txt");
+            duplicate.DuplicateState.Should().Be("active");
+            duplicate.Item.Name.Should().Be("second.txt");
+            harness.ObjectStoreFactory.Originals.Should().ContainSingle();
+        }
+
+        [Fact]
+        public async Task Upload_status_is_owner_scoped_and_cancellation_removes_pending_staging()
+        {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var clientUploadId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("resume then cancel");
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateResultService(dbContext);
+            var created = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                ClientUploadId = clientUploadId,
+                Name = "cancel.txt",
                 MimeType = "text/plain",
                 SizeBytes = bytes.Length
             }, CancellationToken.None);
+            created.IsSuccess.Should().BeTrue();
+            await service.AppendUploadChunkAsync(
+                userId,
+                created.SuccessValue.Id,
+                0,
+                5,
+                bytes.Length,
+                new MemoryStream(bytes[..6]),
+                CancellationToken.None);
+            var idempotentCreate = await service.CreateUploadAsync(userId, new CreateUploadReq
+            {
+                ClientUploadId = clientUploadId,
+                Name = "cancel.txt",
+                MimeType = "text/plain",
+                SizeBytes = bytes.Length
+            }, CancellationToken.None);
+            idempotentCreate.IsSuccess.Should().BeTrue();
+            idempotentCreate.SuccessValue.Id.Should().Be(created.SuccessValue.Id);
+            idempotentCreate.SuccessValue.ReceivedBytes.Should().Be(6);
 
-            var firstChunk = bytes[..12];
-            var progress = await firstService.AppendUploadChunkAsync(userId, upload.Id, 0, firstChunk.Length - 1, bytes.Length,
-                new MemoryStream(firstChunk), CancellationToken.None);
-            progress.ReceivedBytes.Should().Be(firstChunk.Length);
+            var status = await service.GetUploadSessionAsync(userId, created.SuccessValue.Id, CancellationToken.None);
+            status.IsSuccess.Should().BeTrue();
+            status.SuccessValue.ReceivedBytes.Should().Be(6);
+            status.SuccessValue.SizeBytes.Should().Be(bytes.Length);
+            status.SuccessValue.State.Should().Be("pending");
+            (await service.GetUploadSessionAsync(Guid.NewGuid(), created.SuccessValue.Id, CancellationToken.None))
+                .ErrorValue.ErrorCode.Should().Be(MediaErrors.NotFoundCode);
+
+            var stagingFileName = (await dbContext.UploadSessions.SingleAsync()).StagingFileName;
+            File.Exists(Path.Combine(harness.StagingDirectory, stagingFileName)).Should().BeTrue();
+            (await service.CancelUploadAsync(userId, created.SuccessValue.Id, CancellationToken.None)).IsSuccess.Should().BeTrue();
+            (await dbContext.UploadSessions.CountAsync()).Should().Be(0);
+            File.Exists(Path.Combine(harness.StagingDirectory, stagingFileName)).Should().BeFalse();
         }
 
-        await using (var resumedContext = harness.CreateDbContext())
+        [Fact]
+        public async Task Upload_can_resume_in_a_new_service_scope_and_complete_once()
         {
-            var resumedService = harness.CreateService(resumedContext);
-            var remaining = bytes[12..];
-            var progress = await resumedService.AppendUploadChunkAsync(userId, upload.Id, 12, bytes.Length - 1, bytes.Length,
-                new MemoryStream(remaining), CancellationToken.None);
-            progress.ReceivedBytes.Should().Be(bytes.Length);
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("a resumable upload survives a service restart");
+            var checksum = Hash(bytes);
+            CreateUploadRes upload;
 
-            var file = await resumedService.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = checksum }, CancellationToken.None);
-            await harness.CreateMetadataProcessor(resumedContext).ProcessPendingBatchAsync(10, CancellationToken.None);
-            file.Name.Should().Be("resume.txt");
-            file.SizeBytes.Should().Be(bytes.Length);
+            await using (var firstContext = harness.CreateDbContext())
+            {
+                var firstService = harness.CreateService(firstContext);
+                upload = await firstService.CreateUploadAsync(userId, new CreateUploadReq
+                {
+                    Name = "resume.txt",
+                    MimeType = "text/plain",
+                    SizeBytes = bytes.Length
+                }, CancellationToken.None);
+
+                var firstChunk = bytes[..12];
+                var progress = await firstService.AppendUploadChunkAsync(userId, upload.Id, 0, firstChunk.Length - 1, bytes.Length,
+                    new MemoryStream(firstChunk), CancellationToken.None);
+                progress.ReceivedBytes.Should().Be(firstChunk.Length);
+            }
+
+            await using (var resumedContext = harness.CreateDbContext())
+            {
+                var resumedService = harness.CreateService(resumedContext);
+                var remaining = bytes[12..];
+                var progress = await resumedService.AppendUploadChunkAsync(userId, upload.Id, 12, bytes.Length - 1, bytes.Length,
+                    new MemoryStream(remaining), CancellationToken.None);
+                progress.ReceivedBytes.Should().Be(bytes.Length);
+
+                var file = await resumedService.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = checksum }, CancellationToken.None);
+                await harness.CreateMetadataProcessor(resumedContext).ProcessPendingBatchAsync(10, CancellationToken.None);
+                file.Name.Should().Be("resume.txt");
+                file.SizeBytes.Should().Be(bytes.Length);
+            }
+
+            harness.ObjectStoreFactory.Originals.Should().ContainSingle().Which.Value.Should().Equal(bytes);
+            harness.ObjectStoreFactory.PutCalls.Should().Be(1);
+            await using var verificationContext = harness.CreateDbContext();
+            var completedUpload = await verificationContext.UploadSessions.SingleAsync(candidate => candidate.Id == upload.Id);
+            completedUpload.State.Should().Be("completed");
+            File.Exists(Path.Combine(harness.StagingDirectory, completedUpload.StagingFileName)).Should().BeFalse();
         }
 
-        harness.ObjectStoreFactory.Originals.Should().ContainSingle().Which.Value.Should().Equal(bytes);
-        harness.ObjectStoreFactory.PutCalls.Should().Be(1);
-        await using var verificationContext = harness.CreateDbContext();
-        var completedUpload = await verificationContext.UploadSessions.SingleAsync(candidate => candidate.Id == upload.Id);
-        completedUpload.State.Should().Be("completed");
-        File.Exists(Path.Combine(harness.StagingDirectory, completedUpload.StagingFileName)).Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task CompleteUploadAsync_rejects_a_checksum_mismatch_and_keeps_staging_for_retry()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("checksum mismatch");
-        var upload = await CreateAndFillUploadAsync(harness, userId, bytes);
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var action = () => service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = new string('0', 64) }, CancellationToken.None);
-
-        await action.Should().ThrowAsync<ArgumentException>().WithMessage("*did not match*");
-        (await dbContext.UploadSessions.SingleAsync()).State.Should().Be("pending");
-        File.Exists(Path.Combine(harness.StagingDirectory, upload.StagingFileName)).Should().BeTrue();
-        (await dbContext.Files.CountAsync()).Should().Be(0);
-        harness.ObjectStoreFactory.PutCalls.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task CompleteUploadAsync_preserves_pending_upload_when_object_storage_fails_then_recovers_on_retry()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = Encoding.UTF8.GetBytes("retry after an S3 failure");
-        var upload = await CreateAndFillUploadAsync(harness, userId, bytes);
-        harness.ObjectStoreFactory.FailAfterPersistingNextPut = true;
-
-        await using (var failedContext = harness.CreateDbContext())
+        [Fact]
+        public async Task CompleteUploadAsync_rejects_a_checksum_mismatch_and_keeps_staging_for_retry()
         {
-            var failedService = harness.CreateService(failedContext);
-            var action = () => failedService.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
-            await action.Should().ThrowAsync<IOException>().WithMessage("Simulated S3 failure after the original write.");
-            (await failedContext.UploadSessions.SingleAsync()).State.Should().Be("pending");
-            (await failedContext.Files.CountAsync()).Should().Be(0);
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("checksum mismatch");
+            var upload = await CreateAndFillUploadAsync(harness, userId, bytes);
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateService(dbContext);
+            var action = () => service.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = new string('0', 64) }, CancellationToken.None);
+
+            await action.Should().ThrowAsync<ArgumentException>().WithMessage("*did not match*");
+            (await dbContext.UploadSessions.SingleAsync()).State.Should().Be("pending");
             File.Exists(Path.Combine(harness.StagingDirectory, upload.StagingFileName)).Should().BeTrue();
-            harness.ObjectStoreFactory.Originals[Hash(bytes)].Should().Equal(bytes);
+            (await dbContext.Files.CountAsync()).Should().Be(0);
+            harness.ObjectStoreFactory.PutCalls.Should().Be(0);
         }
 
-        await using (var retryContext = harness.CreateDbContext())
+        [Fact]
+        public async Task CompleteUploadAsync_preserves_pending_upload_when_object_storage_fails_then_recovers_on_retry()
         {
-            var retryService = harness.CreateService(retryContext);
-            var file = await retryService.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
-            await harness.CreateMetadataProcessor(retryContext).ProcessPendingBatchAsync(10, CancellationToken.None);
-            file.Name.Should().Be("upload.txt");
-            (await retryContext.UploadSessions.SingleAsync()).State.Should().Be("completed");
-            (await retryContext.Files.CountAsync()).Should().Be(1);
-            (await retryContext.Blobs.CountAsync()).Should().Be(1);
-        }
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = Encoding.UTF8.GetBytes("retry after an S3 failure");
+            var upload = await CreateAndFillUploadAsync(harness, userId, bytes);
+            harness.ObjectStoreFactory.FailAfterPersistingNextPut = true;
 
-        harness.ObjectStoreFactory.PutCalls.Should().Be(2);
-        harness.ObjectStoreFactory.Originals[Hash(bytes)].Should().Equal(bytes);
-        File.Exists(Path.Combine(harness.StagingDirectory, upload.StagingFileName)).Should().BeFalse();
+            await using (var failedContext = harness.CreateDbContext())
+            {
+                var failedService = harness.CreateService(failedContext);
+                var action = () => failedService.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
+                await action.Should().ThrowAsync<IOException>().WithMessage("Simulated S3 failure after the original write.");
+                (await failedContext.UploadSessions.SingleAsync()).State.Should().Be("pending");
+                (await failedContext.Files.CountAsync()).Should().Be(0);
+                File.Exists(Path.Combine(harness.StagingDirectory, upload.StagingFileName)).Should().BeTrue();
+                harness.ObjectStoreFactory.Originals[Hash(bytes)].Should().Equal(bytes);
+            }
+
+            await using (var retryContext = harness.CreateDbContext())
+            {
+                var retryService = harness.CreateService(retryContext);
+                var file = await retryService.CompleteUploadAsync(userId, upload.Id, new CompleteUploadReq { Sha256 = Hash(bytes) }, CancellationToken.None);
+                await harness.CreateMetadataProcessor(retryContext).ProcessPendingBatchAsync(10, CancellationToken.None);
+                file.Name.Should().Be("upload.txt");
+                (await retryContext.UploadSessions.SingleAsync()).State.Should().Be("completed");
+                (await retryContext.Files.CountAsync()).Should().Be(1);
+                (await retryContext.Blobs.CountAsync()).Should().Be(1);
+            }
+
+            harness.ObjectStoreFactory.PutCalls.Should().Be(2);
+            harness.ObjectStoreFactory.Originals[Hash(bytes)].Should().Equal(bytes);
+            File.Exists(Path.Combine(harness.StagingDirectory, upload.StagingFileName)).Should().BeFalse();
+        }
     }
 
     private static async Task<UploadSession> CreateAndFillUploadAsync(MediaTestHarness harness, Guid userId, byte[] bytes)

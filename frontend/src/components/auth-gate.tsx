@@ -32,6 +32,7 @@ import { LibraryApp } from "@/features/library/library-app";
 import { UserManagement } from "@/features/users/user-management";
 import { ImportManagement } from "@/features/imports/import-management";
 import { DeveloperOperations } from "@/features/developer/developer-operations";
+import { StorageUsage } from "@/features/storage/storage-usage";
 import { AlbumsApp } from "@/features/albums/albums-app";
 import { UploadQueueOverlay } from "@/features/uploads/upload-queue-overlay";
 import { PageNavigationShell } from "@/components/page-navigation-shell";
@@ -86,7 +87,7 @@ function subscribeToGoogleSignInOrigin() {
   return () => {};
 }
 
-export function AuthGate({ view }: { view: LibraryView | "users" | "imports" | "developer" }) {
+export function AuthGate({ view }: { view: LibraryView | "users" | "imports" | "developer" | "storage" }) {
   const queryClient = useQueryClient();
   const { t } = usePreferences();
   const { activateUser, deactivateUser } = useUploadQueue();
@@ -132,7 +133,7 @@ export function AuthGate({ view }: { view: LibraryView | "users" | "imports" | "
   };
 
   if (!apiEnabled)
-    return view === "users" || view === "imports" || view === "developer" || view === "albums" ? (
+    return view === "storage" || view === "users" || view === "imports" || view === "developer" || view === "albums" ? (
       <main className="auth-page">
         <p className="auth-note">{t("auth.backendRequired")}</p>
       </main>
@@ -180,11 +181,23 @@ export function AuthGate({ view }: { view: LibraryView | "users" | "imports" | "
         )}
       </>
     );
+  if (view === "storage")
+    return (
+      <>
+        <PageNavigationShell view="storage" user={session.data} onOpenAccount={() => setAccountOpen(true)} onSignOut={signOut}>
+          <StorageUsage userId={session.data.id} />
+        </PageNavigationShell>
+        <UploadQueueOverlay />
+        {(accountOpen || session.data.mustChangePassword) && (
+          <AccountDialog user={session.data} forced={session.data.mustChangePassword} onClose={() => setAccountOpen(false)} onLogout={() => setUser(null)} onPasswordChanged={() => setUser(null)} />
+        )}
+      </>
+    );
   if (view === "imports")
     return (
       <>
         <PageNavigationShell view="imports" user={session.data} onOpenAccount={() => setAccountOpen(true)} onSignOut={signOut}>
-          <ImportManagement />
+          <ImportManagement currentUser={session.data} />
         </PageNavigationShell>
         <UploadQueueOverlay />
         {(accountOpen || session.data.mustChangePassword) && (
@@ -569,7 +582,26 @@ function AccountDialog({
   onPasswordChanged: () => void;
   forced: boolean;
 }) {
-  const { t } = usePreferences();
+  const { t, locale, setLocale, theme, setTheme, photoGridDensity, setPhotoGridDensity, showTimelineEvents, setShowTimelineEvents } = usePreferences();
+  const text = (en: string, es: string) => locale === "es" ? es : en;
+  const [settingsSection, setSettingsSection] = useState(forced ? "security" : "general");
+  const settingsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    settingsRef.current?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !forced) { event.preventDefault(); onClose(); }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(settingsRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select, a[href]') ?? []).filter(el => el.getClientRects().length > 0);
+      const first = controls[0], last = controls[controls.length-1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === settingsRef.current)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === settingsRef.current)) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", keydown); previousFocus?.focus(); };
+  }, [forced, onClose]);
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -638,7 +670,9 @@ function AccountDialog({
       onMouseDown={forced ? undefined : onClose}
     >
       <section
-        className="account-dialog"
+        className="account-dialog account-settings"
+        ref={settingsRef}
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby="account-title"
         role="dialog"
@@ -653,9 +687,22 @@ function AccountDialog({
           ×
         </button>}
         <p className="auth-eyebrow">{t("account.eyebrow")}</p>
-        <h2 id="account-title">{user.displayName}</h2>
+        <h2 id="account-title">{text("Account settings", "Configuración de cuenta")}</h2>
+        <div className="account-profile"><span className="account-avatar" aria-hidden="true">{user.displayName.slice(0,2).toUpperCase()}</span><div><strong>{user.displayName}</strong><small>{user.isOwner ? text("Installation owner", "Propietario de la instalación") : text("Family member", "Miembro de la familia")}</small></div></div>
         <p className="account-email">{user.email}</p>
-        {user.passwordLoginAllowed && <form className="auth-form account-form" onSubmit={savePassword}>
+        {!forced && <nav className="settings-tabs" aria-label={text("Settings sections", "Secciones de configuración")}>
+          <button type="button" aria-pressed={settingsSection === "general"} onClick={() => setSettingsSection("general")}>{text("Preferences", "Preferencias")}</button>
+          <button type="button" aria-pressed={settingsSection === "security"} onClick={() => setSettingsSection("security")}>{text("Security", "Seguridad")}</button>
+        </nav>}
+        {settingsSection === "general" && !forced && <section className="account-preferences">
+          <p className="settings-help">{text("Make PhotoDrive comfortable to use. Changes are saved automatically in this browser.", "Personaliza PhotoDrive. Los cambios se guardan automáticamente en este navegador.")}</p>
+          <label className="settings-row"><span><strong>{text("Language", "Idioma")}</strong><small>{text("Menus and labels", "Menús y etiquetas")}</small></span><select value={locale} onChange={e => setLocale(e.target.value as "en" | "es")}><option value="en">English</option><option value="es">Español</option></select></label>
+          <label className="settings-row"><span><strong>{text("Appearance", "Apariencia")}</strong><small>{text("Choose a comfortable theme", "Elige el tema que prefieras")}</small></span><select value={theme} onChange={e => setTheme(e.target.value as "light" | "dark")}><option value="light">{text("Light", "Claro")}</option><option value="dark">{text("Dark", "Oscuro")}</option></select></label>
+          <label className="settings-row"><span><strong>{text("Photo grid", "Cuadrícula de fotos")}</strong><small>{text("How many photos fit on screen", "Cuántas fotos se muestran en pantalla")}</small></span><select value={photoGridDensity} onChange={e => setPhotoGridDensity(e.target.value as "comfortable" | "standard" | "compact")}><option value="comfortable">{text("Comfortable", "Cómoda")}</option><option value="standard">{text("Standard", "Estándar")}</option><option value="compact">{text("Compact", "Compacta")}</option></select></label>
+          <label className="settings-row"><span><strong>{text("Timeline events", "Eventos en la cronología")}</strong><small>{text("Show your named dates in Photos", "Muestra fechas con nombre en Fotos")}</small></span><input type="checkbox" checked={showTimelineEvents} onChange={e => setShowTimelineEvents(e.target.checked)}/></label>
+        </section>}
+        {settingsSection === "security" && <p className="settings-help">{text("Sign-in methods: ", "Métodos de acceso: ")}{[user.passwordLoginAllowed ? text("Email and password", "Correo y contraseña") : null, user.googleLoginAllowed ? "Google" : null].filter(Boolean).join(" · ")}</p>}
+        {settingsSection === "security" && user.passwordLoginAllowed && <form className="auth-form account-form" onSubmit={savePassword}>
           <div>
             <KeyRound />
             <strong>

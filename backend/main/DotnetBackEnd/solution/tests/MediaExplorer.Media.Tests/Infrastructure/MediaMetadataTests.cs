@@ -331,177 +331,181 @@ public sealed class MediaMetadataTests
         item.CapturedAt.Should().Be(new DateTime(2025, 7, 16, 0, 0, 0, DateTimeKind.Unspecified));
     }
 
-    [Fact]
-    public async Task Photos_timeline_orders_and_paginates_by_effective_capture_date()
+    /// <summary>Timeline, reprocessing and thumbnails: a nested class so xunit runs it in parallel with the tests above.</summary>
+    public sealed class TimelineAndThumbnails
     {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = MetadataFixtures.PngWithoutExif();
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var oldest = await UploadAsync(harness, dbContext, service, userId, "20230102.jpg", "application/octet-stream", bytes, useMediaFolder: true);
-        var older = await UploadAsync(harness, dbContext, service, userId, "20240102.jpg", "application/octet-stream", bytes, useMediaFolder: true);
-        var newer = await UploadAsync(harness, dbContext, service, userId, "20250716.jpg", "application/octet-stream", bytes, useMediaFolder: true);
-
-        var firstPage = await service.BrowsePhotosAsync(userId, "folder", null, null, 1, "all", false, "captured_desc", null, null, CancellationToken.None);
-        firstPage.Items.Should().ContainSingle().Which.Id.Should().Be(newer.Id);
-        firstPage.NextCursor.Should().NotBeNull();
-        var secondPage = await service.BrowsePhotosAsync(userId, "folder", null, firstPage.NextCursor, 1, "all", false, "captured_desc", null, null, CancellationToken.None);
-        secondPage.Items.Should().ContainSingle().Which.Id.Should().Be(older.Id);
-
-        var oldestFirst = await service.BrowsePhotosAsync(userId, "folder", null, null, 100, "all", false, "captured_asc", null, null, CancellationToken.None);
-        oldestFirst.Items[0].Id.Should().Be(oldest.Id);
-        var july = await service.BrowsePhotosAsync(userId, "folder", null, null, 100, "all", false, "captured_desc", null, "2025-07", CancellationToken.None);
-        july.Items.Should().ContainSingle().Which.Id.Should().Be(newer.Id);
-        var day = await service.BrowsePhotosAsync(userId, "folder", null, null, 100, "all", false, "captured_desc", null, "2025-07-16", CancellationToken.None);
-        day.Items.Should().ContainSingle().Which.Id.Should().Be(newer.Id);
-        var eventSeek = await service.BrowsePhotosAtDateAsync(
-            userId, "2025-01-01", 1, CancellationToken.None);
-        eventSeek.Items.Should().ContainSingle().Which.Id.Should().Be(older.Id);
-        eventSeek.PreviousCursor.Should().NotBeNull();
-        eventSeek.NextCursor.Should().NotBeNull();
-        var newerFromSeek = await service.BrowsePhotosAsync(
-            userId, "folder", null, eventSeek.PreviousCursor, 1, "all", false, "captured_desc", null, null, CancellationToken.None);
-        newerFromSeek.Items.Should().ContainSingle().Which.Id.Should().Be(newer.Id);
-        (await service.BrowsePhotoYearsAsync(userId, "folder", null, "all", false, CancellationToken.None)).Years
-            .Should().Equal(2025, 2024, 2023);
-    }
-
-    [Fact]
-    public async Task Reprocessing_updates_one_metadata_row_without_corrupting_results()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = MetadataFixtures.ValidExifJpeg();
-
-        Guid itemId;
-        await using (var dbContext = harness.CreateDbContext())
+        [Fact]
+        public async Task Photos_timeline_orders_and_paginates_by_effective_capture_date()
         {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = MetadataFixtures.PngWithoutExif();
+
+            await using var dbContext = harness.CreateDbContext();
             var service = harness.CreateService(dbContext);
-            var item = await UploadAsync(harness, dbContext, service, userId, "camera.jpg", "application/octet-stream", bytes);
-            itemId = item.Id;
-            item.CaptureDateSource.Should().Be("exif_datetime_original");
+            var oldest = await UploadAsync(harness, dbContext, service, userId, "20230102.jpg", "application/octet-stream", bytes, useMediaFolder: true);
+            var older = await UploadAsync(harness, dbContext, service, userId, "20240102.jpg", "application/octet-stream", bytes, useMediaFolder: true);
+            var newer = await UploadAsync(harness, dbContext, service, userId, "20250716.jpg", "application/octet-stream", bytes, useMediaFolder: true);
+
+            var firstPage = await service.BrowsePhotosAsync(userId, "folder", null, null, 1, "all", false, "captured_desc", null, null, CancellationToken.None);
+            firstPage.Items.Should().ContainSingle().Which.Id.Should().Be(newer.Id);
+            firstPage.NextCursor.Should().NotBeNull();
+            var secondPage = await service.BrowsePhotosAsync(userId, "folder", null, firstPage.NextCursor, 1, "all", false, "captured_desc", null, null, CancellationToken.None);
+            secondPage.Items.Should().ContainSingle().Which.Id.Should().Be(older.Id);
+
+            var oldestFirst = await service.BrowsePhotosAsync(userId, "folder", null, null, 100, "all", false, "captured_asc", null, null, CancellationToken.None);
+            oldestFirst.Items[0].Id.Should().Be(oldest.Id);
+            var july = await service.BrowsePhotosAsync(userId, "folder", null, null, 100, "all", false, "captured_desc", null, "2025-07", CancellationToken.None);
+            july.Items.Should().ContainSingle().Which.Id.Should().Be(newer.Id);
+            var day = await service.BrowsePhotosAsync(userId, "folder", null, null, 100, "all", false, "captured_desc", null, "2025-07-16", CancellationToken.None);
+            day.Items.Should().ContainSingle().Which.Id.Should().Be(newer.Id);
+            var eventSeek = await service.BrowsePhotosAtDateAsync(
+                userId, "2025-01-01", 1, CancellationToken.None);
+            eventSeek.Items.Should().ContainSingle().Which.Id.Should().Be(older.Id);
+            eventSeek.PreviousCursor.Should().NotBeNull();
+            eventSeek.NextCursor.Should().NotBeNull();
+            var newerFromSeek = await service.BrowsePhotosAsync(
+                userId, "folder", null, eventSeek.PreviousCursor, 1, "all", false, "captured_desc", null, null, CancellationToken.None);
+            newerFromSeek.Items.Should().ContainSingle().Which.Id.Should().Be(newer.Id);
+            (await service.BrowsePhotoYearsAsync(userId, "folder", null, "all", false, CancellationToken.None)).Years
+                .Should().Equal(2025, 2024, 2023);
         }
 
-        await using (var retryContext = harness.CreateDbContext())
+        [Fact]
+        public async Task Reprocessing_updates_one_metadata_row_without_corrupting_results()
         {
-            var retryService = harness.CreateService(retryContext);
-            var queued = await retryService.RetryMetadataAsync(userId, itemId, CancellationToken.None);
-            queued.Metadata!.State.Should().Be("pending");
-            await harness.CreateMetadataProcessor(retryContext).ProcessPendingBatchAsync(10, CancellationToken.None);
-            var retried = await retryService.GetItemAsync(userId, itemId, CancellationToken.None);
-            retried.CaptureDateSource.Should().Be("exif_datetime_original");
-            retried.Metadata!.AttemptCount.Should().Be(2);
-            (await retryContext.FileVersionMetadata.CountAsync()).Should().Be(1);
-            (await retryContext.Files.CountAsync()).Should().Be(1);
-        }
-    }
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = MetadataFixtures.ValidExifJpeg();
 
-    [Fact]
-    public async Task Oriented_image_thumbnail_is_auto_rotated_for_rendering()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
+            Guid itemId;
+            await using (var dbContext = harness.CreateDbContext())
+            {
+                var service = harness.CreateService(dbContext);
+                var item = await UploadAsync(harness, dbContext, service, userId, "camera.jpg", "application/octet-stream", bytes);
+                itemId = item.Id;
+                item.CaptureDateSource.Should().Be("exif_datetime_original");
+            }
 
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var bytes = MetadataFixtures.ValidExifJpeg();
-        var item = await UploadAsync(harness, dbContext, service, userId, "rotated.jpg", "image/jpeg", bytes);
-        var gridThumbnailPath = Path.Combine(
-            harness.RootDirectory,
-            "thumbnails",
-            "sha256",
-            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
-            "320.webp");
-        File.Exists(gridThumbnailPath).Should().BeTrue("metadata processing should prewarm the grid thumbnail");
-        await using var thumbnailBytes = new MemoryStream();
-        using (var thumbnail = await service.OpenThumbnailAsync(userId, item.Id, "lg", CancellationToken.None))
-        {
-            await thumbnail.Content.CopyToAsync(thumbnailBytes);
-        }
-        var thumbnailPath = Path.Combine(harness.RootDirectory, "oriented-thumbnail.webp");
-        await File.WriteAllBytesAsync(thumbnailPath, thumbnailBytes.ToArray());
-        var extractedThumbnail = await new ExternalMediaMetadataExtractor(harness.Configuration).ExtractAsync(thumbnailPath, CancellationToken.None);
-
-        extractedThumbnail.DetectedMimeType.Should().Be("image/webp");
-        extractedThumbnail.Width.Should().Be(8);
-        extractedThumbnail.Height.Should().Be(12);
-        extractedThumbnail.Orientation.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task Video_thumbnail_extracts_a_representative_frame_as_webp()
-    {
-        await using var harness = new MediaTestHarness();
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-
-        await using var dbContext = harness.CreateDbContext();
-        var service = harness.CreateService(dbContext);
-        var bytes = MetadataFixtures.Mp4WithCreationTime();
-        var item = await UploadAsync(harness, dbContext, service, userId, "clip.mp4", "video/mp4", bytes);
-        item.ThumbnailPath.Should().Be($"/api/v1/items/{item.Id}/thumbnail?size=md");
-        var gridThumbnailPath = Path.Combine(
-            harness.RootDirectory,
-            "thumbnails",
-            "sha256",
-            Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
-            "320.webp");
-        File.Exists(gridThumbnailPath).Should().BeTrue("metadata processing should prewarm the grid thumbnail");
-
-        await using var thumbnailBytes = new MemoryStream();
-        using (var thumbnail = await service.OpenThumbnailAsync(userId, item.Id, "lg", CancellationToken.None))
-        {
-            thumbnail.ContentType.Should().Be("image/webp");
-            await thumbnail.Content.CopyToAsync(thumbnailBytes);
-        }
-        var thumbnailPath = Path.Combine(harness.RootDirectory, "video-thumbnail.webp");
-        await File.WriteAllBytesAsync(thumbnailPath, thumbnailBytes.ToArray());
-        var extractedThumbnail = await new ExternalMediaMetadataExtractor(harness.Configuration).ExtractAsync(thumbnailPath, CancellationToken.None);
-
-        extractedThumbnail.DetectedMimeType.Should().Be("image/webp");
-        extractedThumbnail.Width.Should().Be(16);
-        extractedThumbnail.Height.Should().Be(10);
-    }
-
-    [Fact]
-    public async Task Metadata_tool_failure_keeps_committed_upload_and_allows_retry()
-    {
-        await using var harness = new MediaTestHarness { MetadataExtractorOverride = new ThrowingExtractor() };
-        await harness.InitializeAsync();
-        var userId = Guid.NewGuid();
-        var bytes = MetadataFixtures.ValidExifJpeg();
-        Guid itemId;
-
-        await using (var failedContext = harness.CreateDbContext())
-        {
-            var service = harness.CreateService(failedContext);
-            var item = await UploadAsync(harness, failedContext, service, userId, "failed-tool.jpg", "image/jpeg", bytes, useMediaFolder: true);
-            itemId = item.Id;
-            item.Metadata!.State.Should().Be("failed");
-            item.Metadata.ErrorCode.Should().Be("metadata_tool_failed");
-            item.Metadata.ErrorMessage.Should().NotContain("Simulated metadata tool failure");
-            (await failedContext.Files.CountAsync()).Should().Be(1);
-            (await failedContext.Blobs.CountAsync()).Should().Be(1);
-            harness.ObjectStoreFactory.Originals.Should().ContainSingle();
+            await using (var retryContext = harness.CreateDbContext())
+            {
+                var retryService = harness.CreateService(retryContext);
+                var queued = await retryService.RetryMetadataAsync(userId, itemId, CancellationToken.None);
+                queued.Metadata!.State.Should().Be("pending");
+                await harness.CreateMetadataProcessor(retryContext).ProcessPendingBatchAsync(10, CancellationToken.None);
+                var retried = await retryService.GetItemAsync(userId, itemId, CancellationToken.None);
+                retried.CaptureDateSource.Should().Be("exif_datetime_original");
+                retried.Metadata!.AttemptCount.Should().Be(2);
+                (await retryContext.FileVersionMetadata.CountAsync()).Should().Be(1);
+                (await retryContext.Files.CountAsync()).Should().Be(1);
+            }
         }
 
-        harness.MetadataExtractorOverride = null;
-        await using (var retryContext = harness.CreateDbContext())
+        [Fact]
+        public async Task Oriented_image_thumbnail_is_auto_rotated_for_rendering()
         {
-            var service = harness.CreateService(retryContext);
-            var queued = await service.RetryMetadataAsync(userId, itemId, CancellationToken.None);
-            queued.Metadata!.State.Should().Be("pending");
-            await harness.CreateMetadataProcessor(retryContext).ProcessPendingBatchAsync(10, CancellationToken.None);
-            var retried = await service.GetItemAsync(userId, itemId, CancellationToken.None);
-            retried.Metadata!.State.Should().Be("succeeded");
-            retried.MimeType.Should().Be("image/jpeg");
-            retried.CaptureDateSource.Should().Be("exif_datetime_original");
-            (await retryContext.FileVersionMetadata.CountAsync()).Should().Be(1);
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateService(dbContext);
+            var bytes = MetadataFixtures.ValidExifJpeg();
+            var item = await UploadAsync(harness, dbContext, service, userId, "rotated.jpg", "image/jpeg", bytes);
+            var gridThumbnailPath = Path.Combine(
+                harness.RootDirectory,
+                "thumbnails",
+                "sha256",
+                Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+                "320.webp");
+            File.Exists(gridThumbnailPath).Should().BeTrue("metadata processing should prewarm the grid thumbnail");
+            await using var thumbnailBytes = new MemoryStream();
+            using (var thumbnail = await service.OpenThumbnailAsync(userId, item.Id, "lg", CancellationToken.None))
+            {
+                await thumbnail.Content.CopyToAsync(thumbnailBytes);
+            }
+            var thumbnailPath = Path.Combine(harness.RootDirectory, "oriented-thumbnail.webp");
+            await File.WriteAllBytesAsync(thumbnailPath, thumbnailBytes.ToArray());
+            var extractedThumbnail = await new ExternalMediaMetadataExtractor(harness.Configuration).ExtractAsync(thumbnailPath, CancellationToken.None);
+
+            extractedThumbnail.DetectedMimeType.Should().Be("image/webp");
+            extractedThumbnail.Width.Should().Be(8);
+            extractedThumbnail.Height.Should().Be(12);
+            extractedThumbnail.Orientation.Should().Be(1);
+        }
+
+        [Fact]
+        public async Task Video_thumbnail_extracts_a_representative_frame_as_webp()
+        {
+            await using var harness = new MediaTestHarness();
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+
+            await using var dbContext = harness.CreateDbContext();
+            var service = harness.CreateService(dbContext);
+            var bytes = MetadataFixtures.Mp4WithCreationTime();
+            var item = await UploadAsync(harness, dbContext, service, userId, "clip.mp4", "video/mp4", bytes);
+            item.ThumbnailPath.Should().Be($"/api/v1/items/{item.Id}/thumbnail?size=md");
+            var gridThumbnailPath = Path.Combine(
+                harness.RootDirectory,
+                "thumbnails",
+                "sha256",
+                Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(),
+                "320.webp");
+            File.Exists(gridThumbnailPath).Should().BeTrue("metadata processing should prewarm the grid thumbnail");
+
+            await using var thumbnailBytes = new MemoryStream();
+            using (var thumbnail = await service.OpenThumbnailAsync(userId, item.Id, "lg", CancellationToken.None))
+            {
+                thumbnail.ContentType.Should().Be("image/webp");
+                await thumbnail.Content.CopyToAsync(thumbnailBytes);
+            }
+            var thumbnailPath = Path.Combine(harness.RootDirectory, "video-thumbnail.webp");
+            await File.WriteAllBytesAsync(thumbnailPath, thumbnailBytes.ToArray());
+            var extractedThumbnail = await new ExternalMediaMetadataExtractor(harness.Configuration).ExtractAsync(thumbnailPath, CancellationToken.None);
+
+            extractedThumbnail.DetectedMimeType.Should().Be("image/webp");
+            extractedThumbnail.Width.Should().Be(16);
+            extractedThumbnail.Height.Should().Be(10);
+        }
+
+        [Fact]
+        public async Task Metadata_tool_failure_keeps_committed_upload_and_allows_retry()
+        {
+            await using var harness = new MediaTestHarness { MetadataExtractorOverride = new ThrowingExtractor() };
+            await harness.InitializeAsync();
+            var userId = Guid.NewGuid();
+            var bytes = MetadataFixtures.ValidExifJpeg();
+            Guid itemId;
+
+            await using (var failedContext = harness.CreateDbContext())
+            {
+                var service = harness.CreateService(failedContext);
+                var item = await UploadAsync(harness, failedContext, service, userId, "failed-tool.jpg", "image/jpeg", bytes, useMediaFolder: true);
+                itemId = item.Id;
+                item.Metadata!.State.Should().Be("failed");
+                item.Metadata.ErrorCode.Should().Be("metadata_tool_failed");
+                item.Metadata.ErrorMessage.Should().NotContain("Simulated metadata tool failure");
+                (await failedContext.Files.CountAsync()).Should().Be(1);
+                (await failedContext.Blobs.CountAsync()).Should().Be(1);
+                harness.ObjectStoreFactory.Originals.Should().ContainSingle();
+            }
+
+            harness.MetadataExtractorOverride = null;
+            await using (var retryContext = harness.CreateDbContext())
+            {
+                var service = harness.CreateService(retryContext);
+                var queued = await service.RetryMetadataAsync(userId, itemId, CancellationToken.None);
+                queued.Metadata!.State.Should().Be("pending");
+                await harness.CreateMetadataProcessor(retryContext).ProcessPendingBatchAsync(10, CancellationToken.None);
+                var retried = await service.GetItemAsync(userId, itemId, CancellationToken.None);
+                retried.Metadata!.State.Should().Be("succeeded");
+                retried.MimeType.Should().Be("image/jpeg");
+                retried.CaptureDateSource.Should().Be("exif_datetime_original");
+                (await retryContext.FileVersionMetadata.CountAsync()).Should().Be(1);
+            }
         }
     }
 

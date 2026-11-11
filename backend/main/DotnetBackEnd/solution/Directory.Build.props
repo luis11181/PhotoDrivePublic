@@ -2,10 +2,11 @@
 <Project>
     <PropertyGroup>
        <!-- net10 🚫 INVALID / net10.0 ✅ CORRECT -->
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>   
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
-        <InvariantGlobalization>true</InvariantGlobalization>
+        <!-- ICU enables IANA timezone resolution on Windows as well as Linux. -->
+        <InvariantGlobalization>false</InvariantGlobalization>
 
         <!--code analysis-->
         <analysisMode>All</analysisMode>

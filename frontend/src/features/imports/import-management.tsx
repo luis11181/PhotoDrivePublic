@@ -1,23 +1,34 @@
 "use client";
 
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
+  Folder,
+  ArrowUp,
   FolderInput,
   Info,
   Loader2,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { BackToLibraryButton } from "@/components/back-to-library-button";
 import { usePreferences } from "@/lib/preferences";
+import type { CurrentUser } from "@/lib/auth";
 import {
   getImportOptions,
+  listImportSourceFolders,
   listImportItems,
   listImportJobs,
   retryImportJob,
+  deleteImportJob,
   startGoogleTakeoutImport,
   type ImportDestination,
   type ImportItemCategory,
@@ -25,7 +36,29 @@ import {
   type ImportJob,
 } from "@/lib/api";
 
-export function ImportManagement() {
+export function ImportManagement({
+  currentUser,
+}: {
+  currentUser: CurrentUser;
+}) {
+  const { t } = usePreferences();
+  if (!currentUser.isOwner)
+    return (
+      <main className="users-page">
+        <section className="users-panel users-denied">
+          <h1>{t("users.ownerRequired")}</h1>
+          <p>{t("imports.ownerHelp")}</p>
+          <BackToLibraryButton
+            className="auth-secondary"
+            label={t("imports.backPhotos")}
+          />
+        </section>
+      </main>
+    );
+  return <OwnerImportManagement />;
+}
+
+function OwnerImportManagement() {
   const { t } = usePreferences();
   const queryClient = useQueryClient();
   const options = useQuery({
@@ -65,7 +98,10 @@ export function ImportManagement() {
           <h1>{t("imports.title")}</h1>
           <p>{t("imports.intro")}</p>
         </div>
-        <BackToLibraryButton className="auth-secondary imports-back" label={t("imports.backPhotos")} />
+        <BackToLibraryButton
+          className="auth-secondary imports-back"
+          label={t("imports.backPhotos")}
+        />
       </header>
 
       {(error || message) && (
@@ -79,7 +115,12 @@ export function ImportManagement() {
         loadingOptions={options.isPending}
         optionsError={options.isError}
         busy={busy}
-        onSubmit={(sourcePath, destinationFolderId, skipSameName, skipIdenticalFiles) =>
+        onSubmit={(
+          sourcePath,
+          destinationFolderId,
+          skipSameName,
+          skipIdenticalFiles,
+        ) =>
           run(async () => {
             const job = await startGoogleTakeoutImport({
               sourcePath,
@@ -138,6 +179,26 @@ export function ImportManagement() {
                     });
                   })
                 }
+                onRemove={() => {
+                  if (
+                    !window.confirm(
+                      t(
+                        job.failedCount > 0
+                          ? "imports.removeConfirmFailed"
+                          : "imports.removeConfirm",
+                        { count: job.failedCount },
+                      ),
+                    )
+                  )
+                    return;
+                  void run(async () => {
+                    await deleteImportJob(job.id);
+                    setMessage(t("imports.removed"));
+                    await queryClient.invalidateQueries({
+                      queryKey: ["import-jobs"],
+                    });
+                  });
+                }}
               />
             ))}
           </div>
@@ -171,7 +232,7 @@ function TakeoutForm({
   ) => void;
 }) {
   const { t } = usePreferences();
-  const [sourcePath, setSourcePath] = useState("");
+  const [sourcePath, setSourcePath] = useState<string | null>(null);
   const [destinationFolderId, setDestinationFolderId] = useState("");
   const [skipSameName, setSkipSameName] = useState(true);
   const [skipIdenticalFiles, setSkipIdenticalFiles] = useState(true);
@@ -187,12 +248,15 @@ function TakeoutForm({
   const documentsRoot = destinations.find(
     (destination) => destination.systemRole === "documents_root",
   );
-  const isInRoot = (destination?: ImportDestination, root?: ImportDestination) =>
+  const isInRoot = (
+    destination?: ImportDestination,
+    root?: ImportDestination,
+  ) =>
     Boolean(
       destination &&
-        root &&
-        (destination.id === root.id ||
-          destination.path.startsWith(`${root.path} / `)),
+      root &&
+      (destination.id === root.id ||
+        destination.path.startsWith(`${root.path} / `)),
     );
   const mediaDestinations = destinations.filter((destination) =>
     isInRoot(destination, mediaRoot),
@@ -212,6 +276,7 @@ function TakeoutForm({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (sourcePath === null) return;
     onSubmit(
       sourcePath.trim(),
       effectiveDestinationFolderId,
@@ -227,116 +292,235 @@ function TakeoutForm({
           <h2>{t("imports.takeout")}</h2>
           <p>{t("imports.takeoutHelp")}</p>
         </div>
-        <FolderInput />
       </div>
       <form className="imports-form" onSubmit={submit}>
-        <label>
-          {t("imports.sourceDirectory")}
-          <input
-            required
-            value={sourcePath}
-            onChange={(event) => setSourcePath(event.target.value)}
-            placeholder="/home/you/Downloads/Takeout/Google Photos"
-            spellCheck={false}
-          />
-          <small>{t("imports.sourceHelp")}</small>
-        </label>
-        <label>
-          {t("imports.destination")}
-          <select
-            required
-            value={effectiveDestinationFolderId}
-            onChange={(event) => setDestinationFolderId(event.target.value)}
-            disabled={loadingOptions}
+        <SourceFolderPicker
+          value={sourcePath}
+          onChange={setSourcePath}
+          disabled={busy}
+        />
+        <div className="imports-settings">
+          <h3 className="imports-settings-title">{t("imports.settings")}</h3>
+          <label className="import-destination-field">
+            {t("imports.destination")}
+            <select
+              required
+              value={effectiveDestinationFolderId}
+              onChange={(event) => setDestinationFolderId(event.target.value)}
+              disabled={busy || loadingOptions}
+            >
+              {loadingOptions && (
+                <option value="">{t("imports.loadingFolders")}</option>
+              )}
+              {!loadingOptions && destinations.length === 0 && (
+                <option value="">{t("imports.noFolders")}</option>
+              )}
+              {mediaDestinations.length > 0 && (
+                <optgroup label={t("imports.photosDestinations")}>
+                  {mediaDestinations.map((destination) => (
+                    <option key={destination.id} value={destination.id}>
+                      {destination.path}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {fileDestinations.length > 0 && (
+                <optgroup label={t("imports.filesDestinations")}>
+                  {fileDestinations.map((destination) => (
+                    <option key={destination.id} value={destination.id}>
+                      {destination.path}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {otherDestinations.length > 0 && (
+                <optgroup label={t("imports.otherDestinations")}>
+                  {otherDestinations.map((destination) => (
+                    <option key={destination.id} value={destination.id}>
+                      {destination.path}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <small>{t("imports.destinationHelp")}</small>
+          </label>
+          {selectedDestination && (
+            <p className="import-destination-note">
+              <Info />
+              {selectedDestinationIsMedia
+                ? t("imports.mediaDestinationNote")
+                : t("imports.filesDestinationNote")}
+            </p>
+          )}
+          {optionsError && (
+            <p className="auth-error import-options-error">
+              {t("imports.destinationFailed")}
+            </p>
+          )}
+          <p className="import-conflict-heading">{t("imports.skipOptions")}</p>
+          <label className="import-checkbox-option">
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={skipSameName}
+              onChange={(event) => setSkipSameName(event.target.checked)}
+            />
+            <span>
+              <strong>{t("imports.skipSameName")}</strong>
+              <small>{t("imports.skipSameNameHelp")}</small>
+            </span>
+          </label>
+          <label className="import-checkbox-option">
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={skipIdenticalFiles}
+              onChange={(event) => setSkipIdenticalFiles(event.target.checked)}
+            />
+            <span>
+              <strong>{t("imports.skipIdentical")}</strong>
+              <small>{t("imports.skipIdenticalHelp")}</small>
+            </span>
+          </label>
+        </div>
+        <footer className="imports-form-footer">
+          <p className="imports-privacy-note">
+            <Info aria-hidden="true" />
+            {t("imports.privacy")}
+          </p>
+          <button
+            className="auth-primary"
+            disabled={
+              busy ||
+              loadingOptions ||
+              optionsError ||
+              sourcePath === null ||
+              !effectiveDestinationFolderId
+            }
+            type="submit"
           >
-            {loadingOptions && (
-              <option value="">{t("imports.loadingFolders")}</option>
-            )}
-            {!loadingOptions && destinations.length === 0 && (
-              <option value="">{t("imports.noFolders")}</option>
-            )}
-            {mediaDestinations.length > 0 && (
-              <optgroup label={t("imports.photosDestinations")}>
-                {mediaDestinations.map((destination) => (
-                  <option key={destination.id} value={destination.id}>
-                    {destination.path}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {fileDestinations.length > 0 && (
-              <optgroup label={t("imports.filesDestinations")}>
-                {fileDestinations.map((destination) => (
-                  <option key={destination.id} value={destination.id}>
-                    {destination.path}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {otherDestinations.length > 0 && (
-              <optgroup label={t("imports.otherDestinations")}>
-                {otherDestinations.map((destination) => (
-                  <option key={destination.id} value={destination.id}>
-                    {destination.path}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-          <small>{t("imports.destinationHelp")}</small>
-        </label>
-        {selectedDestination && (
-          <p className="import-destination-note">
-            <Info />
-            {selectedDestinationIsMedia
-              ? t("imports.mediaDestinationNote")
-              : t("imports.filesDestinationNote")}
-          </p>
-        )}
-        {optionsError && (
-          <p className="auth-error import-options-error">
-            {t("imports.destinationFailed")}
-          </p>
-        )}
-        <p className="import-conflict-heading">{t("imports.skipOptions")}</p>
-        <label className="import-checkbox-option">
-          <input
-            type="checkbox"
-            checked={skipSameName}
-            onChange={(event) => setSkipSameName(event.target.checked)}
-          />
-          <span>
-            <strong>{t("imports.skipSameName")}</strong>
-            <small>{t("imports.skipSameNameHelp")}</small>
-          </span>
-        </label>
-        <label className="import-checkbox-option">
-          <input
-            type="checkbox"
-            checked={skipIdenticalFiles}
-            onChange={(event) => setSkipIdenticalFiles(event.target.checked)}
-          />
-          <span>
-            <strong>{t("imports.skipIdentical")}</strong>
-            <small>{t("imports.skipIdenticalHelp")}</small>
-          </span>
-        </label>
-        <button
-          className="auth-primary"
-          disabled={
-            busy ||
-            !sourcePath.trim() ||
-            !effectiveDestinationFolderId
-          }
-          type="submit"
-        >
-          {busy ? <Loader2 className="spin" /> : <FolderInput />}
-          {t("imports.start")}
-        </button>
+            {busy ? <Loader2 className="spin" /> : <FolderInput />}
+            {t("imports.start")}
+          </button>
+        </footer>
       </form>
-      <p className="imports-privacy-note">
-        {t("imports.privacy")}
-      </p>
+    </section>
+  );
+}
+
+function SourceFolderPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string | null;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const { t } = usePreferences();
+  const [path, setPath] = useState("");
+  const folders = useInfiniteQuery({
+    queryKey: ["import-source-folders", path],
+    retry: false,
+    queryFn: ({ pageParam, signal }) =>
+      listImportSourceFolders(path, pageParam, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+  const current = folders.data?.pages[0];
+  return (
+    <section
+      className="import-source-browser"
+      aria-label={t("imports.sourceDirectory")}
+    >
+      <h3>{t("imports.sourceDirectory")}</h3>
+      <p>{t("imports.sourceHelp")}</p>
+      <div className="import-source-toolbar">
+        <button
+          type="button"
+          className="auth-secondary"
+          disabled={disabled || !current || current.parentPath === null}
+          onClick={() => setPath(current?.parentPath ?? "")}
+        >
+          <ArrowUp />
+          {t("imports.parentFolder")}
+        </button>
+        <strong title={path || t("imports.sourceRoot")}>
+          {path || t("imports.sourceRoot")}
+        </strong>
+      </div>
+      {folders.isPending ? (
+        <div className="import-source-loading" role="status">
+          <Loader2 className="spin" aria-hidden="true" />
+          {t("imports.loadingFolders")}
+        </div>
+      ) : folders.isError ? (
+        <div role="alert">
+          <p className="auth-error">{t("imports.sourceUnavailable")}</p>
+          <button
+            type="button"
+            className="auth-secondary"
+            onClick={() => void folders.refetch()}
+          >
+            {t("imports.refresh")}
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="import-source-folders">
+            {folders.data?.pages
+              .flatMap((page) => page.folders)
+              .map((folder) => (
+                <button
+                  type="button"
+                  key={folder.path}
+                  disabled={disabled}
+                  onClick={() => setPath(folder.path)}
+                >
+                  <Folder aria-hidden="true" />
+                  <span>{folder.name}</span>
+                  <ChevronRight
+                    className="import-folder-chevron"
+                    aria-hidden="true"
+                  />
+                </button>
+              ))}
+            {!folders.data?.pages.some((page) => page.folders.length > 0) && (
+              <p>{t("imports.noSourceFolders")}</p>
+            )}
+          </div>
+          {folders.hasNextPage && (
+            <button
+              type="button"
+              className="auth-secondary import-source-more"
+              disabled={disabled || folders.isFetchingNextPage}
+              onClick={() => void folders.fetchNextPage()}
+            >
+              {t("imports.moreFolders")}
+            </button>
+          )}
+        </>
+      )}
+      <div className="import-source-selection">
+        <button
+          type="button"
+          className="auth-secondary import-source-choose"
+          disabled={
+            disabled || folders.isPending || folders.isError || !current
+          }
+          onClick={() => onChange(path)}
+        >
+          {value === path && <CheckCircle2 aria-hidden="true" />}
+          {t("imports.chooseFolder")}
+        </button>
+        {value !== null && (
+          <p className="import-source-selected" role="status">
+            <span>{t("imports.selectedSource")}</span>
+            <strong>{value || t("imports.sourceRoot")}</strong>
+          </p>
+        )}
+      </div>
     </section>
   );
 }
@@ -345,10 +529,12 @@ function ImportJobCard({
   job,
   busy,
   onRetry,
+  onRemove,
 }: {
   job: ImportJob;
   busy: boolean;
   onRetry: () => void;
+  onRemove: () => void;
 }) {
   const { locale, t } = usePreferences();
   const [category, setCategory] = useState<ImportItemCategory | null>(null);
@@ -452,15 +638,27 @@ function ImportJobCard({
         </p>
       )}
       {category && <ImportItemDetails jobId={job.id} category={category} />}
-      {hasErrors && job.failedCount > 0 && (
-        <button
-          className="auth-secondary import-retry"
-          disabled={busy}
-          onClick={onRetry}
-          type="button"
-        >
-          <RefreshCw /> {t("imports.retryFailed")}
-        </button>
+      {job.state !== "running" && (
+        <div className="import-job-actions">
+          {hasErrors && job.failedCount > 0 && (
+            <button
+              className="auth-secondary import-retry"
+              disabled={busy}
+              onClick={onRetry}
+              type="button"
+            >
+              <RefreshCw /> {t("imports.retryFailed")}
+            </button>
+          )}
+          <button
+            className="auth-secondary import-remove"
+            disabled={busy}
+            onClick={onRemove}
+            type="button"
+          >
+            <Trash2 /> {t("imports.remove")}
+          </button>
+        </div>
       )}
     </article>
   );
@@ -577,7 +775,10 @@ function ImportItemRow({ item }: { item: ImportItemResult }) {
   );
 }
 
-const categoryLabels: Record<"en" | "es", Record<ImportItemCategory, string>> = {
+const categoryLabels: Record<
+  "en" | "es",
+  Record<ImportItemCategory, string>
+> = {
   en: {
     all: "All discovered items",
     imported: "Imported items",
@@ -600,18 +801,24 @@ const categoryLabels: Record<"en" | "es", Record<ImportItemCategory, string>> = 
 
 const outcomeLabels: Record<"en" | "es", Record<string, string>> = {
   en: {
-  imported_new_original: "Imported; a new original was stored.",
-  imported_reused_original: "Imported; the existing stored original was reused.",
-  duplicate_active: "Skipped because identical bytes already exist in the active library.",
-  duplicate_trashed: "Skipped because identical bytes already exist in Trash.",
-  name_conflict: "Skipped because a different active file has this name in the destination folder.",
-  source_changed: "Failed because the source changed after the import was scanned.",
-  destination_unavailable: "Failed because the selected destination is no longer active.",
-  read_failed: "Failed while reading the source file.",
-  storage_failed: "Failed while storing the original.",
-  catalog_failed: "Failed while committing the catalog item.",
-  pending: "Waiting to be processed.",
-  processing: "Currently being processed.",
+    imported_new_original: "Imported; a new original was stored.",
+    imported_reused_original:
+      "Imported; the existing stored original was reused.",
+    duplicate_active:
+      "Skipped because identical bytes already exist in the active library.",
+    duplicate_trashed:
+      "Skipped because identical bytes already exist in Trash.",
+    name_conflict:
+      "Skipped because a different active file has this name in the destination folder.",
+    source_changed:
+      "Failed because the source changed after the import was scanned.",
+    destination_unavailable:
+      "Failed because the selected destination is no longer active.",
+    read_failed: "Failed while reading the source file.",
+    storage_failed: "Failed while storing the original.",
+    catalog_failed: "Failed while committing the catalog item.",
+    pending: "Waiting to be processed.",
+    processing: "Currently being processed.",
   },
   es: {
     imported_new_original: "Importado; se almacenó un original nuevo.",
@@ -637,15 +844,23 @@ const outcomeLabels: Record<"en" | "es", Record<string, string>> = {
 
 const warningLabels: Record<"en" | "es", Record<string, string>> = {
   en: {
-  sidecar_missing: "No matching Google metadata sidecar was found; the original was still imported.",
-  sidecar_invalid: "The matching Google metadata sidecar was malformed and was ignored.",
-  sidecar_title_mismatch: "The sidecar title did not match the media filename.",
-  sidecar_ambiguous: "More than one sidecar could match this media file, so none was used.",
-  taken_time_ignored: "The Google taken-time value was invalid and was ignored.",
-  description_truncated: "The imported description exceeded the catalog limit and was shortened.",
-  location_ignored: "The Google location was incomplete or invalid and was ignored.",
-  altitude_ignored: "The Google altitude was invalid and was ignored.",
-  warning_details_unavailable: "The stored warning details could not be read.",
+    sidecar_missing:
+      "No matching Google metadata sidecar was found; the original was still imported.",
+    sidecar_invalid:
+      "The matching Google metadata sidecar was malformed and was ignored.",
+    sidecar_title_mismatch:
+      "The sidecar title did not match the media filename.",
+    sidecar_ambiguous:
+      "More than one sidecar could match this media file, so none was used.",
+    taken_time_ignored:
+      "The Google taken-time value was invalid and was ignored.",
+    description_truncated:
+      "The imported description exceeded the catalog limit and was shortened.",
+    location_ignored:
+      "The Google location was incomplete or invalid and was ignored.",
+    altitude_ignored: "The Google altitude was invalid and was ignored.",
+    warning_details_unavailable:
+      "The stored warning details could not be read.",
   },
   es: {
     sidecar_missing:
@@ -662,8 +877,7 @@ const warningLabels: Record<"en" | "es", Record<string, string>> = {
       "La descripción importada superaba el límite del catálogo y se acortó.",
     location_ignored:
       "La ubicación de Google estaba incompleta o no era válida y se ignoró.",
-    altitude_ignored:
-      "La altitud de Google no era válida y se ignoró.",
+    altitude_ignored: "La altitud de Google no era válida y se ignoró.",
     warning_details_unavailable:
       "No se pudieron leer los detalles almacenados del aviso.",
   },

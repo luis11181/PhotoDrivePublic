@@ -15,9 +15,14 @@ namespace MediaExplorer.Media.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/imports")]
-[Authorize]
+[Authorize(Policy = "Owner")]
 public sealed class ImportsController(IImportService imports) : ControllerBase
 {
+    /// <summary>Browses relative subfolders of the configured read-only server import inbox. Owner only.</summary>
+    [HttpGet("source-folders")]
+    [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiRes<ImportSourceFoldersRes>))]
+    public IActionResult SourceFolders([FromQuery] string? path, [FromQuery] string? cursor, [FromQuery] int limit = 50, CancellationToken cancellationToken = default)
+        => this.ToApiResult(imports.ListSourceFolders(path, cursor, Math.Clamp(limit, 1, 100), cancellationToken));
     /// <summary>Returns the caller's active catalog folders that may receive an import.</summary>
     [HttpGet("options")]
     [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiRes<ImportOptionsRes>))]
@@ -70,7 +75,7 @@ public sealed class ImportsController(IImportService imports) : ControllerBase
     }
 
     /// <summary>Scans an extracted Google Photos Takeout directory and queues every discovered media item.</summary>
-    /// <remarks>The source must be beneath a configured server import root. Processing continues in the restart-safe background queue after this request returns.</remarks>
+    /// <remarks>The source is relative to the configured import inbox. Absolute paths, traversal and symbolic links are rejected. Processing continues in the restart-safe background queue after this request returns.</remarks>
     [HttpPost("google-takeout")]
     [RequireAntiforgeryToken]
     [ProducesResponseType(StatusCodes.Status201Created, Type = typeof(ApiRes<ImportJobRes>))]
@@ -92,6 +97,18 @@ public sealed class ImportsController(IImportService imports) : ControllerBase
         if (!TryGetUserId(out var userId)) return Unauthorized(ApiRes.Unauthorized());
         var result = await imports.RetryFailedAsync(userId, id, cancellationToken);
         return this.ToApiResult(result);
+    }
+
+    /// <summary>Removes a finished owned import job and its per-file results.</summary>
+    /// <remarks>Files the import already added stay in the library. Running jobs return 409. Removing a job with failed items gives up retrying them.</remarks>
+    [HttpDelete("{id:guid}")]
+    [RequireAntiforgeryToken]
+    [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiRes))]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId)) return Unauthorized(ApiRes.Unauthorized());
+        return (await imports.DeleteAsync(userId, id, cancellationToken)).Match<IActionResult>(
+            () => Ok(ApiRes.Success()), error => this.ToApiError(error));
     }
 
     private bool TryGetUserId(out Guid userId) =>

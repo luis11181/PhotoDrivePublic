@@ -2,139 +2,182 @@
 
 PhotoDrive is a self-hosted family Photos + Drive application. It combines a
 capture-date photo timeline, albums, real folders, private sharing, and
-invite-only family accounts in one responsive web app.
-It has my preferred features and defaults, and is a cheap and safe alternative to a local NAS
+invite-only family accounts in one responsive web app, and runs on the
+computers you already own.
 
-![PhotoDrive Photos timeline](docs/assets/full-library-preview.webp)
+![PhotoDrive Photos timeline](.github/assets/full-library-preview.webp)
 
-This repository is the sanitized, self-hostable distribution. It contains no
-private installation configuration.
+This repository is the public, sanitized source. It contains no private
+installation data: every host-specific value in the tracked configuration is a
+placeholder you replace with your own.
 
 ## What it includes
 
-- Photos timeline grouped by year and month, with date, type, tag, and Favorite filters
-- Timeline events, albums, capture-date corrections, search, and image/video viewing
-- A Drive-style Files workspace with folders, sorting, previews, and recursive search
-- Resumable file and folder uploads plus restart-safe Google Photos Takeout imports
-- Private folder and album sharing between owner-defined family accounts
-- Password login and optional Google OAuth; OAuth never creates an uninvited user
-- Recoverable Trash with explicit, guarded permanent cleanup
-- Private S3 originals, verified SQLite backups, and rebuildable local caches
+- Photos timeline grouped by year and month, with a seekable scrubber, Timeline Events, and date, type, tag, and Favorite filters
+- Albums with derived mosaic covers, viewer and collaborator sharing, and direct album uploads
+- A Drive-style Files workspace with folders, sorting, previews, tags, recursive search, and folder/album ZIP downloads
+- Resumable file and folder uploads, plus restart-safe Google Photos Takeout imports
+- Capture-date corrections that never touch the original bytes
+- Private sharing between owner-defined family accounts; password login and optional Google OAuth (OAuth never creates an uninvited user)
+- Recoverable Trash with explicit, reviewed permanent cleanup
+- Owner Developer tools: servers, backups, cache builds, storage audit
 - English/Spanish and light/dark preferences
 
-## Quick start
+## Architecture
 
-You need Docker with Compose v2 and an AWS account or compatible credentials
-that may create/configure two private S3 buckets. The bucket names must be
-globally unique and different from each other.
+| Data | Where it lives |
+| --- | --- |
+| Catalog and accounts (names, folders, albums, sharing, users) | One shared [Turso Cloud](https://turso.tech) database; a family library fits in Turso's free plan |
+| Original photo/video/file bytes | Your private S3 bucket, immutable and content-addressed by SHA-256 |
+| Local read replica, original cache, thumbnails | Each PhotoDrive server's disk; always safe to delete and rebuild |
+| Weekly verified database backup | A second private S3 bucket, as a plain SQLite file plus a manifest |
+
+You can run PhotoDrive on several computers at once (for example a desktop and a
+laptop). Every server keeps a **local read-only replica** of the Turso database:
+
+- Page loads, the timeline, and search read from the local replica, so they answer in tens of milliseconds.
+- Every save is one transaction directly against Turso Cloud, so it is either saved for every server or not at all. The server then reads back its own change immediately; other servers pull changes every 30 seconds.
+- If Turso is unreachable, browsing keeps working from the replica and saves fail clearly (nothing is queued offline).
+- One server is the **primary** for background work (metadata extraction, the weekly backup). Change it in **Developer tools → Servers**. If the primary stops for five minutes, another online server takes over automatically.
+
+The backend is .NET 10 (ASP.NET Core, EF Core); the frontend is a Next.js static
+export served by the backend from the same origin. The Docker image includes
+ImageMagick, FFmpeg, and `file` for metadata and thumbnails.
+
+## Requirements
+
+- Docker with Compose v2 (Linux, or Docker Desktop with Linux containers on Windows)
+- A free [Turso](https://turso.tech) account and the [Turso CLI](https://docs.turso.tech/cli/introduction)
+- An AWS account (or S3-compatible storage) and the AWS CLI
+
+## Setup
+
+### 1. Create the Turso database
 
 ```bash
-install -m 600 .env.example .env
+turso db create photodrive-production
+turso db show photodrive-production --url
+turso db tokens create photodrive-production
 ```
 
-Edit the REQUIRED section in `.env`, then run:
+The database name must not contain `development`; Production refuses the Development database.
+
+### 2. Create the S3 buckets
+
+Use two different, private buckets. The originals bucket must **never** have an
+expiration rule:
+
+```bash
+aws s3api create-bucket --bucket <your-originals-bucket> --profile photodrive
+aws s3api put-public-access-block --bucket <your-originals-bucket> --profile photodrive \
+  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+aws s3api put-bucket-versioning --bucket <your-originals-bucket> --profile photodrive \
+  --versioning-configuration Status=Enabled
+```
+
+The backup bucket gets a retention rule (here 180 days). The backup upload refuses to run without it:
+
+```bash
+scripts/configure-s3-backup-buckets.sh <your-backups-bucket>:180
+```
+
+Store credentials for an IAM user limited to these two buckets in the `photodrive`
+profile (`~/.aws/credentials` and `~/.aws/config`). The launcher mounts that
+folder read-only into the container.
+
+### 3. Fill in the configuration
+
+The host settings live in `backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/`.
+Replace every placeholder (values containing `replace-`, `/absolute/path`, or
+`example.com`). Production validation refuses to start while any remain.
+
+| File | What to set |
+| --- | --- |
+| `infrastructure.json` | `Database:Url` (the `libsql://…` URL written as `turso://…`), both S3 bucket names and region. The Docker launcher overrides the local paths. |
+| `authentication.json` | `JwtSettings:AccessTokenSecret` (for example `openssl rand -base64 48`), the bootstrap Owner email, and optionally a Google OAuth client ID |
+| `deployment.json` | The hostnames and browser origins your family uses (LAN name, Tailscale name, or HTTPS domain) and the allowed client networks |
+| `secrets.Production.json` | Copy `secrets.example.json`. Add the Turso token, an optional one-time Owner password, and the optional Google client secret. This file is ignored by Git. |
+
+### 4. Start
+
+Linux:
 
 ```bash
 ./photodrive setup
 ```
 
-That single command creates and hardens the S3 buckets, builds one image with
-the frontend and backend, applies the checked-in SQLite migrations explicitly,
-and starts the application with a persistent Docker volume.
+Windows (PowerShell):
 
-Open the exact address configured in `PHOTODRIVE_ORIGIN` and sign in with the
-bootstrap owner credentials. Change the temporary password immediately. After
-the first Owner is active, you may remove `PHOTODRIVE_OWNER_PASSWORD` from
-`.env` and recreate the container with `./photodrive start`.
-
-Useful commands:
-
-```bash
-./photodrive status
-./photodrive logs
-./photodrive validate
-./photodrive update
-./photodrive stop
+```powershell
+.\photodrive.ps1 setup
 ```
 
-`stop` does not delete the named `photodrive-data` volume. Do not run
-`docker compose down --volumes` unless you deliberately intend to remove the
-local databases, keys, caches, and local backup staging area.
+`setup` creates the data folders (default `~/Data` on Linux, `%USERPROFILE%\PhotoDriveData`
+on Windows), builds the image, validates the configuration, applies the database
+migrations, and starts the server. Open the configured origin (port 60020 by
+default) and sign in as the Owner.
 
-## One configuration file
+Everyday commands: `start`, `stop`, `restart`, `update` (build, migrate, restart),
+`status`, `logs`, `health`, `validate`. Use `configure` to save a different data
+folder, port, or bind address (`--data-directory`, `--port`, `--bind-address`, …).
 
-`.env` is the only user-edited runtime file. It is ignored by Git. Required
-values appear first; optional settings and documented defaults appear below
-them. See [Configuration](docs/CONFIGURATION.md) for Google OAuth, reverse
-proxy, network allowlist, cache, and backup details.
+### Adding another server
 
-Never commit `.env`. Docker environment variables are visible to administrators
-of the Docker host, so the host itself remains part of the trust boundary.
+On a second computer, clone the repository, use the same configuration files and
+`secrets.Production.json`, and run `./photodrive update` (or `start`). It
+downloads its own local replica and joins the same library. Do not run
+migrations from two computers at the same time.
 
-## Storage and recovery
+## Backups and recovery
 
-PhotoDrive deliberately gives each layer one job:
-
-| Layer | Role |
-| --- | --- |
-| Private originals bucket | Immutable, content-addressed original bytes |
-| SQLite catalog + users database | Folders, albums, shares, accounts, and mutable metadata |
-| Local Docker volume | Databases, keys, staging, thumbnails, cache, and local backup snapshots |
-| Private backup bucket | Remotely verified catalog-and-user backup sets |
-
-The originals and backup buckets must be versioned and private. `setup`
-configures public-access blocking, bucket-owner enforcement, AES-256 server-side
-encryption, and versioning. It also gives the backup bucket the retention policy
-expected by the application.
-
-Backups run every 12 hours by default. A checkpoint advances only after a
-timestamp-matched catalog/users set has been restored, integrity-checked,
-uploaded, and remotely checksum-verified. S3 protects original bytes; SQLite
-backups protect the library organization people recognize. You need both.
-
-Read [Backup and restore](docs/BACKUP_AND_RESTORE.md) before your first upgrade
-or recovery drill.
-
-## Safe exposure
-
-`http://localhost:8080` is the simplest first setup. For access outside the
-host, prefer a private VPN or an HTTPS reverse proxy. Set the exact public HTTPS
-origin in `PHOTODRIVE_ORIGIN`; if a proxy directly fronts the container, also
-set `PHOTODRIVE_BEHIND_PROXY=true` and narrowly identify its trusted network.
-
-PhotoDrive uses HttpOnly cookies, CSRF protection, authorization, rate limits,
-security headers, private S3 access, and optional client-network allowlisting.
-The browser never receives S3 credentials, bucket names, object keys, or hashes.
+- Turso Cloud keeps its own history of the database.
+- The primary server also exports a verified, standard SQLite copy to the backup bucket every 7 days (`MediaStorage:Backups:IntervalDays`), checking integrity and references before and after upload. Owners can run **Backup now** in Developer tools at any time.
+- To restore, import a backup set into a new Turso database with `turso db import` and point `Database:Url` at it. Never copy a live replica file.
+- Original bytes are never deleted on a timer: Trash is recoverable until an owner clears it, and storage cleanup needs a review, typed confirmation, and a fresh verified backup.
 
 ## Development
 
-Frontend:
+Prerequisites: .NET 10 (pinned by `global.json`), Node.js 22+, ImageMagick, FFmpeg, and `file`.
 
-```bash
-cd frontend
-npm ci
-npm run lint
-npm run build
-```
+1. Create a separate Development Turso database (its name should contain `development`) and fill in `infrastructure.Development.json`, `authentication.Development.json`, and `secrets.Development.json`.
+2. Apply migrations: `./photodrive migrate --environment development`.
+3. Run the backend:
 
-Backend:
+   ```bash
+   cd backend/main/DotnetBackEnd/solution
+   dotnet run --project src/Hosts/CSSApps.Api
+   ```
+
+4. Run the frontend (copy `frontend/.env.example` to `frontend/.env.local` first):
+
+   ```bash
+   cd frontend
+   npm ci
+   npm run dev
+   ```
+
+Development seeds the owner from `usersSettings.Development.json`; replace its placeholder password.
+
+Tests:
 
 ```bash
 cd backend/main/DotnetBackEnd/solution
 dotnet test tests/MediaExplorer.Media.Tests/MediaExplorer.Media.Tests.csproj
-dotnet build src/Hosts/CSSApps.Api/CSSApps.Api.csproj --no-restore
 ```
 
-The browser contract is documented in [backend/API.md](backend/API.md).
+```bash
+cd frontend
+npm run lint
+npm run build
+```
 
-## Scope
+## Security notes
 
-PhotoDrive is family-focused software, not a general collaboration suite. It
-does not provide public share links, editor roles, office document conversion,
-face recognition, OCR search, or reliable browser-only automatic phone backup.
+- Keep the app on your LAN or tailnet, or put it behind HTTPS. Never router-forward the plain HTTP port.
+- The browser never receives S3 keys, database tokens, content hashes, or storage paths. Sessions use HttpOnly cookies with CSRF protection.
+- Never commit `secrets.*.json`, `.env` files, or real values in the tracked JSON files.
 
 ## License
 
-PhotoDrive is licensed under [GNU AGPL-3.0-only](LICENSE). If you modify it and
-let users interact with the modified application over a network, the license
-requires offering those users the corresponding source.
+PhotoDrive is licensed under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
+The vendored `Turso.EntityFrameworkCore.Sqlite` provider keeps its own license in its folder.

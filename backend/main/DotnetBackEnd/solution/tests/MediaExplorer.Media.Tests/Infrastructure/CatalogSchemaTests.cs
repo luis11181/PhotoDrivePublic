@@ -1,4 +1,7 @@
 using FluentAssertions;
+using CSSApps.Shared.Infrastructure.Data.Turso;
+using MediaExplorer.Media.Application;
+using MediaExplorer.Media.Contracts;
 using MediaExplorer.Media.Infrastructure;
 using MediaExplorer.Media.Tests.TestSupport;
 using Microsoft.EntityFrameworkCore;
@@ -81,21 +84,56 @@ public sealed class CatalogSchemaTests
     }
 
     [Fact]
-    public async Task Missing_search_trigger_is_repaired_even_when_version_is_current()
+    public async Task Missing_search_table_is_rebuilt_even_when_version_is_current()
     {
         await using var harness = new MediaTestHarness();
         await harness.InitializeAsync();
         await using var dbContext = harness.CreateDbContext();
-        await dbContext.Database.ExecuteSqlRawAsync(
-            "DROP TRIGGER catalog_search_file_tags_insert;");
+        await dbContext.Database.ExecuteSqlRawAsync("DROP TABLE timeline_event_search;");
 
         await new MediaCatalogInitializer(dbContext).EnsureDerivedSchemaAsync();
 
-        (await SchemaObjectExistsAsync(
-            dbContext,
-            "trigger",
-            "catalog_search_file_tags_insert"))
-            .Should().BeTrue();
+        (await SchemaObjectExistsAsync(dbContext, "table", "timeline_event_search")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Search_folds_accents_and_case_and_follows_renames()
+    {
+        await using var harness = new MediaTestHarness();
+        await harness.InitializeAsync();
+        await using var dbContext = harness.CreateDbContext();
+        var service = harness.CreateService(dbContext);
+        var userId = Guid.NewGuid();
+        var folder = await service.CreateFolderAsync(userId, new CreateFolderReq { Name = "Cumpleaños de JOSÉ" }, CancellationToken.None);
+
+        (await SearchIdsAsync(service, userId, "jose cumpleanos")).Should().Equal(folder.Id);
+        (await SearchIdsAsync(service, userId, "ÑOS")).Should().Equal(folder.Id);
+        (await SearchIdsAsync(service, userId, "navidad")).Should().BeEmpty();
+
+        await service.RenameItemAsync(userId, folder.Id, new RenameItemReq { Name = "Navidad" }, CancellationToken.None);
+
+        (await SearchIdsAsync(service, userId, "jose")).Should().BeEmpty();
+        (await SearchIdsAsync(service, userId, "navidad")).Should().Equal(folder.Id);
+    }
+
+    private static async Task<Guid[]> SearchIdsAsync(MediaTestClient service, Guid userId, string query) =>
+        (await service.QueryFilesAsync(userId, new FileQueryOptions { Query = query, Location = "all", Limit = 50 }, CancellationToken.None))
+        .Items.Select(item => item.Id).ToArray();
+
+    [Fact]
+    public async Task Replica_route_reads_but_rejects_every_write()
+    {
+        await using var harness = new MediaTestHarness();
+        await harness.InitializeAsync();
+        var options = new DbContextOptionsBuilder<MediaCatalogDbContext>();
+        harness.Database.Configure(options, DatabaseRouteKind.Replica, TursoDatabase.MediaHistoryTable);
+        await using var replica = new MediaCatalogDbContext(options.Options);
+
+        (await replica.Libraries.CountAsync()).Should().Be(0);
+        replica.Libraries.Add(new MediaExplorer.Media.Domain.Library { OwnerUserId = Guid.NewGuid() });
+        (await replica.Invoking(context => context.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>())
+            .WithInnerException<ReplicaWriteException>();
+        await replica.Invoking(context => context.Database.ExecuteSqlRawAsync("DELETE FROM tags;")).Should().ThrowAsync<ReplicaWriteException>();
     }
 
     [Fact]
@@ -106,13 +144,14 @@ public sealed class CatalogSchemaTests
         await using var dbContext = harness.CreateDbContext();
         await dbContext.Database.OpenConnectionAsync();
 
+        // Turso reports index names in lowercase, so compare case-insensitively.
         var indexes = new HashSet<string>(StringComparer.Ordinal);
         await using var command = dbContext.Database.GetDbConnection().CreateCommand();
         command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'index';";
         await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) indexes.Add(reader.GetString(0));
+        while (await reader.ReadAsync()) indexes.Add(reader.GetString(0).ToLowerInvariant());
 
-        indexes.Should().Contain([
+        indexes.Should().Contain(((string[])[
             "IX_files_LibraryId_TrashedAt_CapturedAt_Sequence",
             "IX_files_LibraryId_TrashedAt_Sequence",
             "IX_files_LibraryId_TrashRootId",
@@ -136,9 +175,9 @@ public sealed class CatalogSchemaTests
             "IX_tags_LibraryId_Name_Id",
             "IX_file_tags_TagId_FileId",
             "IX_folder_tags_TagId_FolderId"
-        ]);
+        ]).Select(name => name.ToLowerInvariant()));
 
-        indexes.Should().NotContain([
+        indexes.Should().NotContain(((string[])[
             "IX_files_LibraryId_TrashedAt",
             "IX_folders_LibraryId_TrashedAt",
             "IX_files_LibraryId_CapturedAt_Sequence",
@@ -146,7 +185,7 @@ public sealed class CatalogSchemaTests
             "IX_file_version_metadata_State_ProcessingStartedAt",
             "IX_file_version_metadata_State_ExtractorVersion",
             "IX_file_version_metadata_State_RecoveryManifestState"
-        ]);
+        ]).Select(name => name.ToLowerInvariant()));
     }
 
     private static async Task<bool> SchemaObjectExistsAsync(

@@ -1,4 +1,5 @@
 using CSSApps.Shared.Infrastructure.Data.DesignTime;
+using CSSApps.Shared.Infrastructure.Data.Turso;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -8,9 +9,8 @@ public sealed class UsersDbContextFactory : IDesignTimeDbContextFactory<UsersDbC
 {
     public UsersDbContext CreateDbContext(string[] args)
     {
-        var connectionString = DesignTimeDbContextFactorySupport.GetRequiredConnectionString("UsersModule");
         var optionsBuilder = new DbContextOptionsBuilder<UsersDbContext>();
-        optionsBuilder.UseSqlite(connectionString);
+        optionsBuilder.UseTurso(DesignTimeDbContextFactorySupport.LocalConnectionString(), sqlite => sqlite.MigrationsHistoryTable(TursoDatabase.UsersHistoryTable));
 
         return new UsersDbContext(optionsBuilder.Options, DesignTimeDbContextFactorySupport.ExecutionContextAccessor);
     }

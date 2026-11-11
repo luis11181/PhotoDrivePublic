@@ -9,7 +9,6 @@ public interface IUsersDbContext : IModuleDbContext
     //DbSet<BotPhoneNumber> botPhoneNumbers { get; }
     DbSet<User> Users { get; }
     DbSet<Role> Roles { get; }
-    DbSet<Permission> Permissions { get; }
     DbSet<UserToken> UserTokens { get; }
     DbSet<UserSession> UserSessions { get; }
     DbSet<SecurityToken> SecurityTokens { get; }

@@ -1,0 +1,60 @@
+name: photodrive-development
+
+# Development on BOTH Windows and Arch. The launcher supplies test host paths.
+services:
+  photodrive:
+    extends:
+      file: compose.runtime.yaml
+      service: photodrive
+    image: photodrive-development:local
+    restart: "no"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # Migration is an explicit launcher step, never a side effect of start.
+      Startup__DevelopmentDatabaseInitializationMode: None
+      ReverseProxy__KnownNetworks__0: 172.31.250.16/28
+      AccessControl__IpAllowlist__AllowedNetworks__5: 172.31.250.16/28
+    volumes:
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/appsettings.Development.json
+        target: /app/appsettings.Development.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/authentication.Development.json
+        target: /app/authentication.Development.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/deployment.Development.json
+        target: /app/deployment.Development.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/infrastructure.Development.json
+        target: /app/infrastructure.Development.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/logging.Development.json
+        target: /app/logging.Development.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/usersSettings.Development.json
+        target: /app/usersSettings.Development.json
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [photodrive-development]
+
+networks:
+  photodrive-development:
+    ipam:
+      config:
+        - subnet: 172.31.250.16/28

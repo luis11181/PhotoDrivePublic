@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Sockets;
-using Microsoft.Data.Sqlite;
 using CSSApps.Api.AccessControl;
 
 namespace CSSApps.Api;
@@ -70,8 +69,7 @@ public static class ProductionConfigurationValidator
                 errors.Add($"Frontend:AllowedHttpHostsAnyPort entry '{host}' must also appear in AllowedHosts.");
         }
 
-        RequireAbsoluteSqlitePath(configuration, "UsersModule", errors);
-        RequireAbsoluteSqlitePath(configuration, "MediaCatalog", errors);
+        RequireTursoDatabase(configuration, errors);
         RequireAbsoluteDirectory(configuration, "Security:DataProtectionKeysDirectory", errors);
         RequireAbsoluteDirectory(configuration, "MediaStorage:LocalDisk:StagingDirectory", errors);
         RequireAbsoluteDirectory(configuration, "MediaStorage:LocalDisk:ThumbnailDirectory", errors);
@@ -111,25 +109,17 @@ public static class ProductionConfigurationValidator
         return errors;
     }
 
-    private static void RequireAbsoluteSqlitePath(IConfiguration configuration, string name, List<string> errors)
+    private static void RequireTursoDatabase(IConfiguration configuration, List<string> errors)
     {
-        var value = configuration.GetConnectionString(name);
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            errors.Add($"ConnectionStrings:{name} is required.");
-            return;
-        }
-
-        try
-        {
-            var path = new SqliteConnectionStringBuilder(value).DataSource;
-            if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path) || IsPlaceholder(path))
-                errors.Add($"ConnectionStrings:{name} must use an absolute, non-placeholder SQLite path.");
-        }
-        catch (ArgumentException)
-        {
-            errors.Add($"ConnectionStrings:{name} is not a valid SQLite connection string.");
-        }
+        var url = configuration["Database:Url"];
+        if (string.IsNullOrWhiteSpace(url) || IsPlaceholder(url) ||
+            !(url.StartsWith("turso://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("libsql://", StringComparison.OrdinalIgnoreCase)))
+            errors.Add("Database:Url must be the Production Turso Cloud URL (turso://...); see docs/TURSO.md, \"Moving Production to Turso\".");
+        else if (url.Contains("development", StringComparison.OrdinalIgnoreCase))
+            errors.Add("Database:Url names the Development Turso database; Production needs its own database.");
+        if (string.IsNullOrWhiteSpace(configuration["Database:AuthToken"]) || IsPlaceholder(configuration["Database:AuthToken"]!))
+            errors.Add("Database:AuthToken is required; put it in the untracked secrets.<Environment>.json (see secrets.example.json).");
+        RequireAbsoluteDirectory(configuration, "Database:ReplicaPath", errors);
     }
 
     private static bool IsAllowedOriginScheme(Uri uri, bool requireHttps)

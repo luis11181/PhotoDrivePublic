@@ -118,7 +118,7 @@ public sealed class GoogleTakeoutImportTests
         var destinationFolderId = await MediaFolderIdAsync(imports, userId);
         var started = await imports.StartGoogleTakeoutAsync(userId, new CreateGoogleTakeoutImportReq
         {
-            SourcePath = Path.Combine(harness.RootDirectory, "Takeout", "Google Photos"),
+            SourcePath = "Takeout/Google Photos",
             DestinationFolderId = destinationFolderId,
             NameConflictPolicy = "skip"
         }, CancellationToken.None);
@@ -146,7 +146,7 @@ public sealed class GoogleTakeoutImportTests
 
         var repeated = await imports.StartGoogleTakeoutAsync(userId, new CreateGoogleTakeoutImportReq
         {
-            SourcePath = Path.Combine(harness.RootDirectory, "Takeout", "Google Photos"),
+            SourcePath = "Takeout/Google Photos",
             DestinationFolderId = destinationFolderId,
             NameConflictPolicy = "skip"
         }, CancellationToken.None);
@@ -196,7 +196,7 @@ public sealed class GoogleTakeoutImportTests
         var destinationFolderId = await MediaFolderIdAsync(imports, userId);
         var first = await imports.StartGoogleTakeoutAsync(userId, new CreateGoogleTakeoutImportReq
         {
-            SourcePath = source,
+            SourcePath = Path.GetRelativePath(harness.RootDirectory, source).Replace('\\', '/'),
             DestinationFolderId = destinationFolderId,
             NameConflictPolicy = "keep_both"
         }, default);
@@ -204,7 +204,7 @@ public sealed class GoogleTakeoutImportTests
 
         var second = await imports.StartGoogleTakeoutAsync(userId, new CreateGoogleTakeoutImportReq
         {
-            SourcePath = source,
+            SourcePath = Path.GetRelativePath(harness.RootDirectory, source).Replace('\\', '/'),
             DestinationFolderId = destinationFolderId,
             NameConflictPolicy = "keep_both",
             SkipIdenticalFiles = false
@@ -240,7 +240,7 @@ public sealed class GoogleTakeoutImportTests
         var destinationFolderId = await MediaFolderIdAsync(imports, userId);
         var started = await imports.StartGoogleTakeoutAsync(userId, new CreateGoogleTakeoutImportReq
         {
-            SourcePath = source,
+            SourcePath = Path.GetRelativePath(harness.RootDirectory, source).Replace('\\', '/'),
             DestinationFolderId = destinationFolderId,
             NameConflictPolicy = "skip"
         }, CancellationToken.None);
@@ -301,7 +301,7 @@ public sealed class GoogleTakeoutImportTests
                 userId,
                 new CreateGoogleTakeoutImportReq
                 {
-                    SourcePath = source,
+                    SourcePath = Path.GetRelativePath(harness.RootDirectory, source).Replace('\\', '/'),
                     DestinationFolderId = await MediaFolderIdAsync(imports, userId),
                     NameConflictPolicy = "skip"
                 },
@@ -317,7 +317,7 @@ public sealed class GoogleTakeoutImportTests
     }
 
     [Fact]
-    public async Task Import_accepts_any_accessible_directory_and_uses_the_selected_catalog_folder()
+    public async Task Import_rejects_a_directory_outside_the_configured_source()
     {
         await using var harness = new MediaTestHarness();
         await harness.InitializeAsync();
@@ -339,17 +339,13 @@ public sealed class GoogleTakeoutImportTests
                 userId,
                 new CreateGoogleTakeoutImportReq
                 {
-                    SourcePath = source,
+                    SourcePath = Path.GetRelativePath(harness.RootDirectory, source).Replace('\\', '/'),
                     DestinationFolderId = destination.Id,
                     NameConflictPolicy = "skip"
                 },
                 CancellationToken.None);
-            started.IsSuccess.Should().BeTrue();
-            started.SuccessValue.DestinationFolderId.Should().Be(destination.Id);
-            started.SuccessValue.DestinationPath.Should().EndWith("Takeout destination");
-
-            (await imports.ProcessPendingBatchAsync(10, CancellationToken.None)).Should().Be(1);
-            (await dbContext.Files.SingleAsync()).ParentFolderId.Should().Be(destination.Id);
+            started.IsFailure.Should().BeTrue();
+            (await dbContext.ImportJobs.CountAsync()).Should().Be(0);
         }
         finally
         {

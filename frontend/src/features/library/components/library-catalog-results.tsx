@@ -25,6 +25,8 @@ export function LibraryCatalogResults({
   selectedIds,
   fileViewMode,
   query,
+  hasActiveFilters = false,
+  onClearFilters,
   pending,
   errorMessage,
   onRetry,
@@ -58,6 +60,8 @@ export function LibraryCatalogResults({
   selectedIds: string[];
   fileViewMode: LibraryFileViewMode;
   query: string;
+  hasActiveFilters?: boolean;
+  onClearFilters?: () => void;
   pending: boolean;
   errorMessage?: string;
   onRetry: () => void;
@@ -89,11 +93,24 @@ export function LibraryCatalogResults({
 
   if (pending)
     return (
-      <LibraryEmptyState
-        icon={<Cloud className="catalog-spinner" />}
-        title={t("library.loading")}
-        copy={t("library.readingCatalog")}
-      />
+      <div className="catalog-loading" role="status">
+        <span className="visually-hidden">{t("library.readingCatalog")}</span>
+        <div
+          aria-hidden="true"
+          className={
+            view !== "photos" && fileViewMode === "list"
+              ? "catalog-skeleton-list"
+              : `catalog-skeleton-grid ${view === "photos" ? "catalog-skeleton-photos" : ""}`
+          }
+        >
+          {Array.from({ length: 8 }, (_, index) => (
+            <div className="catalog-skeleton" key={index}>
+              <span className="catalog-skeleton-image" />
+              {view !== "photos" && <span className="catalog-skeleton-label" />}
+            </div>
+          ))}
+        </div>
+      </div>
     );
 
   if (errorMessage)
@@ -103,6 +120,7 @@ export function LibraryCatalogResults({
         title={t("library.loadFailed")}
         copy={errorMessage}
         action={onRetry}
+        actionLabel={t("library.tryAgain")}
       />
     );
 
@@ -111,19 +129,21 @@ export function LibraryCatalogResults({
       <LibraryEmptyState
         icon={view === "photos" ? <ImageIcon /> : <Search />}
         title={
-          query
+          query || hasActiveFilters
             ? t("library.noMatches")
             : view === "photos"
               ? t("library.noMedia")
               : t("library.nothingHere")
         }
         copy={
-          query
+          query || hasActiveFilters
             ? t("library.clearFilterHint")
             : view === "shared"
               ? t("library.sharedEmpty")
               : t("library.emptyHint")
         }
+        action={query || hasActiveFilters ? onClearFilters : undefined}
+        actionLabel={t("library.clearFilters")}
       />
     );
 

@@ -99,6 +99,10 @@
   font-size: 11px;
   line-height: 1.5;
 }
+.developer-health-card p.developer-health-card-meta {
+  color: var(--ink);
+  font-weight: 600;
+}
 .developer-health-card a {
   align-self: end;
   width: fit-content;
@@ -273,4 +277,74 @@
   .developer-health-card {
     min-height: 0;
   }
+}
+
+/* Keep status scannable; detailed installation metrics are available on demand. */
+.developer-page {max-width:1440px;margin:0 auto;padding:28px clamp(16px,3vw,40px) 48px;}
+.developer-page .imports-header,.developer-page .imports-panel {max-width:none;width:100%;}
+.developer-page .imports-header h1 {font-size:28px;letter-spacing:-.03em;}
+.developer-section-nav {display:flex;flex-wrap:wrap;gap:6px;margin:0 0 22px;padding-bottom:16px;border-bottom:1px solid var(--line);}
+.developer-section-nav a {padding:9px 12px;border-radius:7px;font-size:12px;text-decoration:none;color:var(--muted);background:var(--surface);border:1px solid var(--line);}
+.developer-section-nav a:hover {color:var(--green);border-color:var(--green);}
+.developer-page [id] {scroll-margin-top:88px;}
+.developer-details-summary {cursor:pointer;font-size:14px;font-weight:650;min-height:28px;}
+.developer-overview[open] .imports-section-heading {margin-top:18px;}
+.developer-page .developer-health {padding:20px;background:var(--surface);border-color:var(--line);}
+.developer-page .developer-health-heading h2 {font-size:19px;}
+.developer-page .developer-health-grid {gap:0 24px;}
+.developer-page .developer-health-card {min-height:0;padding:16px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;gap:7px;}
+.developer-page .developer-health-card h3 {font-size:13px;}
+.developer-page .developer-health-card p {font-size:12px;line-height:1.55;}
+.developer-page .developer-health-card a {font-size:11px;}
+.developer-page .developer-health-badge {font-size:9px;padding:3px 7px;}
+.developer-page .developer-health-card-heading>svg {width:17px;height:17px;}
+.developer-page .developer-health-mark {width:32px;height:32px;flex-basis:32px;}
+.developer-page .imports-panel {background:var(--surface);}
+.developer-page .developer-cache-form>.auth-primary {width:auto;min-height:38px;padding:9px 16px;font-size:12px;}
+@media(max-width:600px) {.developer-section-nav {gap:6px;}.developer-section-nav a {flex:1 1 40%;text-align:center;}.developer-page .developer-health-grid {grid-template-columns:1fr;}}
+
+.developer-page .developer-cache-form {display:flex;flex-direction:column;align-items:flex-start;gap:14px;}
+.developer-page .developer-cache-choice {display:flex;align-items:flex-start;gap:10px;width:100%;}
+.developer-page .developer-cache-choice input {width:16px;height:16px;min-height:0;flex:0 0 16px;margin:2px 0 0;}
+.developer-page .developer-cache-choice span {display:block;}.developer-page .developer-cache-choice small {display:block;margin-top:5px;line-height:1.6;}
+.developer-page .developer-maintenance-panel .auth-primary,.developer-page .developer-maintenance-panel .auth-secondary {width:auto;align-self:flex-start;min-height:36px;font-size:12px;padding:9px 14px;}
+
+.developer-hosts {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.developer-host {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.developer-host > div {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.developer-host small {
+  opacity: 0.75;
+}
+
+.developer-host-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.developer-host svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
 }

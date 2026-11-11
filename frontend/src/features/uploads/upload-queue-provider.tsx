@@ -17,6 +17,7 @@ import {
   completeUploadSession,
   createUploadSession,
   getUploadSession,
+  setAlbumItems,
   type UploadDestination,
 } from "@/lib/api";
 import { ApiRequestError } from "@/lib/auth";
@@ -55,6 +56,7 @@ type UploadQueueContextValue = {
 };
 
 const UploadQueueContext = createContext<UploadQueueContextValue | null>(null);
+const MAX_CONCURRENT_UPLOADS = 3;
 
 export function UploadQueueProvider({
   children,
@@ -68,13 +70,15 @@ export function UploadQueueProvider({
   const activeUserRef = useRef<string | undefined>(undefined);
   const recordsRef = useRef<StoredUpload[]>([]);
   const processingRef = useRef(false);
-  const abortRef = useRef<AbortController | undefined>(undefined);
+  const wakeWorkerRef = useRef<(() => void) | undefined>(undefined);
+  const abortControllersRef = useRef(new Map<string, AbortController>());
   const removedIdsRef = useRef(new Set<string>());
   const activationRef = useRef(0);
 
   const replaceRecords = useCallback((next: StoredUpload[]) => {
     recordsRef.current = next;
     setRecords(next);
+    wakeWorkerRef.current?.();
   }, []);
 
   const updateRecord = useCallback(
@@ -100,7 +104,7 @@ export function UploadQueueProvider({
     async (userId: string) => {
       if (activeUserRef.current === userId) return;
       const activation = ++activationRef.current;
-      abortRef.current?.abort();
+      abortControllersRef.current.forEach((controller) => controller.abort());
       activeUserRef.current = userId;
       setActiveUserId(userId);
       try {
@@ -126,8 +130,7 @@ export function UploadQueueProvider({
 
   const deactivateUser = useCallback(() => {
     ++activationRef.current;
-    abortRef.current?.abort();
-    abortRef.current = undefined;
+    abortControllersRef.current.forEach((controller) => controller.abort());
     activeUserRef.current = undefined;
     setActiveUserId(undefined);
     replaceRecords([]);
@@ -174,9 +177,7 @@ export function UploadQueueProvider({
           logError("frontend.upload", "file could not enter durable queue", {
             sizeBytes: file.size,
             reason:
-              reason instanceof Error
-                ? reason.name
-                : "unknown_storage_error",
+              reason instanceof Error ? reason.name : "unknown_storage_error",
           });
         }
       }
@@ -189,7 +190,7 @@ export function UploadQueueProvider({
   const retry = useCallback(
     async (id: string) => {
       const item = recordsRef.current.find((candidate) => candidate.id === id);
-      if (!item || !item.blob) return;
+      if (!item || (!item.blob && !item.catalogItemId)) return;
       await updateRecord(id, {
         state: "queued",
         error: undefined,
@@ -220,8 +221,7 @@ export function UploadQueueProvider({
       const item = recordsRef.current.find((candidate) => candidate.id === id);
       if (!item) return;
       removedIdsRef.current.add(id);
-      if (abortRef.current && item.state === "uploading")
-        abortRef.current.abort();
+      abortControllersRef.current.get(id)?.abort();
       try {
         const cancelling: StoredUpload = {
           ...item,
@@ -260,7 +260,6 @@ export function UploadQueueProvider({
               : "Could not remove this upload.",
         });
       } finally {
-        if (abortRef.current?.signal.aborted) abortRef.current = undefined;
         setWakeVersion((current) => current + 1);
       }
     },
@@ -294,12 +293,10 @@ export function UploadQueueProvider({
 
   const cancelAllPending = useCallback(async () => {
     const pendingIds = recordsRef.current
-      .filter(
-        (item) => item.state !== "completed" && item.state !== "skipped",
-      )
+      .filter((item) => item.state !== "completed" && item.state !== "skipped")
       .map((item) => item.id);
     pendingIds.forEach((id) => removedIdsRef.current.add(id));
-    abortRef.current?.abort();
+    abortControllersRef.current.forEach((controller) => controller.abort());
     for (const id of pendingIds) await remove(id);
   }, [remove]);
 
@@ -355,98 +352,201 @@ export function UploadQueueProvider({
     );
     if (!hasRunnable) return;
     processingRef.current = true;
+    const activation = activationRef.current;
+    const isCurrentUser = () =>
+      activeUserRef.current === userId && activationRef.current === activation;
 
-    void withQueueLock(userId, async () => {
-      if (activeUserRef.current !== userId) return;
-      const stored = await listStoredUploads(userId);
-      const normalized = stored.map((item) =>
-        item.state === "uploading"
-          ? { ...item, state: "queued" as const }
-          : item,
-      );
-      await Promise.all(
-        normalized
-          .filter((item, index) => item !== stored[index])
-          .map((item) => putStoredUpload(item)),
-      );
-      replaceRecords(normalized);
-      const next = normalized.find(
-        (item) =>
-          item.state === "queued" && !removedIdsRef.current.has(item.id),
-      );
-      if (!next) return;
-      if (!next.blob) {
-        await updateRecord(next.id, {
-          state: "failed",
-          errorCode: "storage",
-          error: "The saved file is unavailable. Remove it and choose it again.",
-        });
-        return;
-      }
-
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-      await updateRecord(next.id, {
-        state: "uploading",
-        error: undefined,
-        errorCode: undefined,
-      });
+    // Refreshes can include every loaded album page. They must never hold up
+    // the next file, and overlapping completions share one trailing refresh.
+    let refreshPending = false;
+    let refreshing = false;
+    const refreshCatalog = async () => {
+      refreshPending = true;
+      if (refreshing) return;
+      refreshing = true;
       try {
-        await processUpload(next, abortController.signal, updateRecord, true);
-        const completed = await updateRecord(next.id, {
-          state: "completed",
-          receivedBytes: next.sizeBytes,
-          blob: undefined,
-          error: undefined,
-          errorCode: undefined,
-        });
-        logInfo("frontend.upload", "durable queue item completed", {
-          uploadId: completed?.serverUploadId,
-          sizeBytes: next.sizeBytes,
-        });
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ["library"] }),
-          queryClient.invalidateQueries({ queryKey: ["photo-timeline-anchors"] }),
-          queryClient.invalidateQueries({ queryKey: ["photo-years"] }),
-          queryClient.invalidateQueries({ queryKey: ["catalog-search"] }),
-          queryClient.invalidateQueries({ queryKey: ["storage-summary"] }),
-        ]);
+        while (refreshPending && isCurrentUser()) {
+          refreshPending = false;
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["library"] }),
+            queryClient.invalidateQueries({
+              queryKey: ["photo-timeline-anchors"],
+            }),
+            queryClient.invalidateQueries({ queryKey: ["photo-years"] }),
+            queryClient.invalidateQueries({ queryKey: ["catalog-search"] }),
+            queryClient.invalidateQueries({ queryKey: ["storage-summary"] }),
+            queryClient.invalidateQueries({ queryKey: ["albums"] }),
+            queryClient.invalidateQueries({ queryKey: ["album-photo-picker"] }),
+          ]);
+        }
       } catch (reason) {
-        if (removedIdsRef.current.has(next.id)) return;
-        const offline =
-          typeof navigator !== "undefined" && navigator.onLine === false;
-        const nameConflict =
-          reason instanceof ApiRequestError &&
-          reason.status === 409 &&
-          reason.message === "An item with this name already exists.";
-        await updateRecord(next.id, {
-          state: nameConflict ? "conflict" : offline ? "paused" : "failed",
-          errorCode: nameConflict
-            ? "name_conflict"
-            : offline
-              ? "offline"
-              : "upload",
-          error: nameConflict
-            ? "A file with this name now exists in the destination."
-            : offline
-              ? "Waiting for an internet connection."
-              : reason instanceof Error
-                ? reason.message
-                : "Upload failed.",
-        });
-        logError("frontend.upload", "durable queue item paused", {
-          sizeBytes: next.sizeBytes,
-          reason: nameConflict
-            ? "name_conflict"
-            : offline
-              ? "offline"
-              : reason instanceof Error
-                ? reason.message
-                : "unknown_error",
+        logError("frontend.upload", "catalog refresh failed", {
+          reason: reason instanceof Error ? reason.message : "unknown_error",
         });
       } finally {
-        if (abortRef.current === abortController) abortRef.current = undefined;
+        refreshing = false;
       }
+    };
+
+    void withQueueLock(userId, async () => {
+      if (!isCurrentUser()) return;
+      // Read saved Blobs once when taking over the lock, rather than reloading
+      // the entire batch from IndexedDB before every single file.
+      const beforeLoad = new Map(
+        recordsRef.current.map((item) => [item.id, item]),
+      );
+      const stored = await listStoredUploads(userId);
+      if (!isCurrentUser()) return;
+      const currentRecords = new Map(
+        recordsRef.current.map((item) => [item.id, item]),
+      );
+      const normalized = stored.map((item) => {
+        const current = currentRecords.get(item.id);
+        if (current && current !== beforeLoad.get(item.id)) return current;
+        return item.state === "uploading"
+          ? { ...item, state: "queued" as const }
+          : item;
+      });
+      const loadedIds = new Set(normalized.map((item) => item.id));
+      replaceRecords([
+        ...normalized.filter((item) => !removedIdsRef.current.has(item.id)),
+        ...recordsRef.current.filter(
+          (item) =>
+            !beforeLoad.has(item.id) &&
+            !loadedIds.has(item.id) &&
+            !removedIdsRef.current.has(item.id),
+        ),
+      ]);
+
+      const processNext = async (next: StoredUpload) => {
+        if (!next.blob && !next.catalogItemId) {
+          await updateRecord(next.id, {
+            state: "failed",
+            errorCode: "storage",
+            error:
+              "The saved file is unavailable. Remove it and choose it again.",
+          });
+          return;
+        }
+
+        const abortController = new AbortController();
+        abortControllersRef.current.set(next.id, abortController);
+        try {
+          await updateRecord(next.id, {
+            state: "uploading",
+            error: undefined,
+            errorCode: undefined,
+          });
+          if (!isCurrentUser() || abortController.signal.aborted) return;
+          await processUpload(next, abortController.signal, updateRecord, true);
+          if (!isCurrentUser()) return;
+          const completed = await updateRecord(next.id, {
+            state: "completed",
+            receivedBytes: next.sizeBytes,
+            blob: undefined,
+            error: undefined,
+            errorCode: undefined,
+          });
+          logInfo("frontend.upload", "durable queue item completed", {
+            uploadId: completed?.serverUploadId,
+            sizeBytes: next.sizeBytes,
+          });
+          void refreshCatalog();
+        } catch (reason) {
+          if (!isCurrentUser() || removedIdsRef.current.has(next.id)) return;
+          const offline =
+            typeof navigator !== "undefined" && navigator.onLine === false;
+          const nameConflict =
+            reason instanceof ApiRequestError &&
+            reason.status === 409 &&
+            reason.message === "An item with this name already exists.";
+          const albumPending = Boolean(
+            next.destination.albumId &&
+            recordsRef.current.find((item) => item.id === next.id)
+              ?.catalogItemId,
+          );
+          if (albumPending) {
+            void refreshCatalog();
+          }
+          await updateRecord(next.id, {
+            state: nameConflict ? "conflict" : offline ? "paused" : "failed",
+            errorCode: nameConflict
+              ? "name_conflict"
+              : offline
+                ? "offline"
+                : albumPending
+                  ? "album"
+                  : "upload",
+            error: nameConflict
+              ? "A file with this name now exists in the destination."
+              : offline
+                ? "Waiting for an internet connection."
+                : reason instanceof Error
+                  ? reason.message
+                  : "Upload failed.",
+          });
+          logError("frontend.upload", "durable queue item paused", {
+            sizeBytes: next.sizeBytes,
+            reason: nameConflict
+              ? "name_conflict"
+              : offline
+                ? "offline"
+                : reason instanceof Error
+                  ? reason.message
+                  : "unknown_error",
+          });
+        } finally {
+          if (abortControllersRef.current.get(next.id) === abortController)
+            abortControllersRef.current.delete(next.id);
+        }
+      };
+
+      const running = new Set<Promise<void>>();
+      const failures: unknown[] = [];
+      let resume: (() => void) | undefined;
+      let notified = false;
+      const wake = () => {
+        notified = true;
+        resume?.();
+      };
+      wakeWorkerRef.current = wake;
+      try {
+        while (isCurrentUser()) {
+          notified = false;
+          while (running.size < MAX_CONCURRENT_UPLOADS) {
+            const next = recordsRef.current.find(
+              (item) =>
+                item.userId === userId &&
+                item.state === "queued" &&
+                !removedIdsRef.current.has(item.id),
+            );
+            if (!next) break;
+            // Claim synchronously before starting another file. Queue changes
+            // also wake this scheduler, filling idle slots during slow enqueue.
+            const task = processNext(next)
+              .catch((reason) => {
+                failures.push(reason);
+              })
+              .finally(() => {
+                running.delete(task);
+                wake();
+              });
+            running.add(task);
+          }
+          if (!running.size) break;
+          await new Promise<void>((resolve) => {
+            resume = resolve;
+            if (notified) resolve();
+          });
+          resume = undefined;
+        }
+      } finally {
+        // Keep the cross-tab lock until every transfer settles, including when
+        // switching accounts or a browser-storage checkpoint fails.
+        await Promise.allSettled(running);
+        wakeWorkerRef.current = undefined;
+      }
+      if (failures.length) throw failures[0];
     })
       .catch((reason) => {
         logError("frontend.upload", "durable queue worker failed", {
@@ -520,6 +620,10 @@ async function processUpload(
   ) => Promise<StoredUpload | undefined>,
   mayRestart: boolean,
 ): Promise<void> {
+  if (initial.catalogItemId) {
+    await finishAlbumMembership(initial, signal);
+    return;
+  }
   if (!initial.blob) throw new Error("The saved file is unavailable.");
   if (navigator.onLine === false) throw new TypeError("Offline");
 
@@ -563,10 +667,7 @@ async function processUpload(
     }
   }
 
-  if (
-    session.sizeBytes !== undefined &&
-    session.sizeBytes !== item.sizeBytes
-  )
+  if (session.sizeBytes !== undefined && session.sizeBytes !== item.sizeBytes)
     throw new Error("The saved file no longer matches its server session.");
   item =
     (await update(item.id, {
@@ -620,10 +721,11 @@ async function processUpload(
       Boolean(item.destination.allowNameConflict),
       signal,
     );
-    await update(item.id, {
+    item = (await update(item.id, {
       catalogItemId: completed.item.id,
       duplicateState: completed.duplicateState,
-    });
+      blob: undefined,
+    })) ?? { ...item, catalogItemId: completed.item.id };
   } catch (reason) {
     const recoverableSessionConflict =
       mayRestart &&
@@ -649,6 +751,24 @@ async function processUpload(
         checksum: undefined,
       })) ?? item;
     await processUpload(restarted, signal, update, false);
+    return;
+  }
+  await finishAlbumMembership(item, signal);
+}
+
+async function finishAlbumMembership(item: StoredUpload, signal: AbortSignal) {
+  if (!item.destination.albumId || !item.catalogItemId) return;
+  const result = await setAlbumItems(
+    item.destination.albumId,
+    [item.catalogItemId],
+    true,
+    signal,
+  );
+  if (result.failedCount) {
+    throw new Error(
+      result.results.find((result) => result.status === "failed")?.message ??
+        "Could not add the uploaded file to the album.",
+    );
   }
 }
 

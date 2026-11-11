@@ -8,14 +8,14 @@ namespace CSSApps.Users.Application.Services.Auth.Session;
 
 /// <summary>
 /// Service for managing user sessions.
-///
+/// 
 /// Sessions track user login instances across devices/browsers.
 /// Each session has:
 /// - User association
 /// - IP address and user agent for device identification
 /// - Activity timestamps
 /// - Active/terminated status
-///
+/// 
 /// </summary>
 internal sealed class SessionService
 {
@@ -34,9 +34,9 @@ internal sealed class SessionService
     /// Creates a new independently revocable browser session for the user.
     /// </summary>
     public async Task<Result<UserSession>> CreateOrUpdateSessionAsync(
-        Guid userId,
-        string ipAddress,
-        string? userAgent,
+        Guid userId, 
+        string ipAddress, 
+        string? userAgent, 
         string? deviceName)
     {
         try

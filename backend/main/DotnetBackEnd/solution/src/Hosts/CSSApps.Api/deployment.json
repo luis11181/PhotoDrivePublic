@@ -1,0 +1,42 @@
+{
+  "_comments": {
+    "Purpose": "Host and network settings for a private LAN/Tailscale installation, loaded after the module JSON files and before environment variables.",
+    "Customize": "Add the hostnames and origins your family uses (for example a LAN name or a Tailscale MagicDNS name). Never router-forward the plain HTTP port."
+  },
+  "Urls": "http://0.0.0.0:6065",
+  "AllowedHosts": "localhost;127.0.0.1;photodrive.local;photodrive",
+  "Frontend": {
+    "AllowedOrigins": [
+      "http://localhost:60020",
+      "http://127.0.0.1:60020",
+      "http://photodrive.local:60020"
+    ],
+    "AllowedHttpHostsAnyPort": [
+      "photodrive"
+    ]
+  },
+  "ReverseProxy": {
+    "Enabled": true,
+    "KnownProxies": [
+      "127.0.0.1",
+      "::1"
+    ],
+    "KnownNetworks": []
+  },
+  "AccessControl": {
+    "IpAllowlist": {
+      "Enabled": true,
+      "AllowedNetworks": [
+        "127.0.0.1/32",
+        "::1/128",
+        "192.168.0.0/16",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "fd7a:115c:a1e0::/48"
+      ]
+    }
+  },
+  "Security": {
+    "RequireHttps": false
+  }
+}

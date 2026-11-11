@@ -17,7 +17,7 @@ namespace CSSApps.Users.Application.Services.Auth;
 internal sealed class UserAdministrationService(
     IUsersDbContext dbContext,
     PasswordService passwordService,
-    IUserPermissionsService permissionsService,
+    IUserRolesService rolesService,
     IOptions<FamilyAuthenticationOptions> familyOptions,
     IOptions<GoogleOAuthConfig> googleOptions,
     TimeProvider timeProvider) : IUserAdministrationService
@@ -146,7 +146,7 @@ internal sealed class UserAdministrationService(
         await RevokeCredentialsAsync(user, "Account access changed", cancellationToken);
         AddAudit("user.updated", actorUserId, user.Id);
         await dbContext.SaveChangesAsync(cancellationToken);
-        await permissionsService.InvalidateUserPermissionsAsync(user.Id);
+        await rolesService.InvalidateUserRolesAsync(user.Id);
 
         var activeSessions = await dbContext.UserSessions.CountAsync(
             session => session.UserId == user.Id && session.IsActive, cancellationToken);

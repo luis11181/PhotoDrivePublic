@@ -29,27 +29,27 @@ public class UserToken : AuditableEntity, IAggregateRoot
     }
 
     public Guid Id { get; private set; }
-
+    
     public Guid UserId { get; private set; }
-
+    
     /// <summary>
     /// Session ID for tracking which session this token belongs to
     /// </summary>
     public Guid? SessionId { get; private set; }
-
+    
     public string TokenType { get; private set; } = null!; // access_token, refresh_token, etc
-
+    
     public string TokenHash { get; private set; } = null!;
-
+    
     /// <summary>
     /// Optional external token identifier retained for non-browser token types.
     /// </summary>
     public string? Jti { get; private set; }
-
+    
     public DateTime ExpiresAt { get; private set; }
-
+    
     public string? Provider { get; private set; } // Google, Facebook, etc (null for local tokens)
-
+    
     public bool IsRevoked { get; private set; }
 
     // Navigation property for EF Core

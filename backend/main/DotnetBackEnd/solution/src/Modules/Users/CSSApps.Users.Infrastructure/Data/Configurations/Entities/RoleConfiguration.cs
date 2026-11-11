@@ -16,12 +16,5 @@ internal sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
         // Property configurations
         builder.Property(e => e.Name).IsRequired().HasMaxLength(100);
         builder.Property(e => e.Description).HasMaxLength(500);
-
-        builder.HasMany(r => r.Permissions)
-            .WithMany(p => p.Roles)
-            .UsingEntity(
-                "role_permissions",
-                l => l.HasOne(typeof(Permission)).WithMany().HasForeignKey("permission_id"),
-                r => r.HasOne(typeof(Role)).WithMany().HasForeignKey("role_id"));
     }
 }

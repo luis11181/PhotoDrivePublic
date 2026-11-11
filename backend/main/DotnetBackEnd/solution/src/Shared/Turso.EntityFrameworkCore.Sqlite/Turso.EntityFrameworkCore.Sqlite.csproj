@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Vendored copy of Turso's EF Core provider (MIT, see LICENSE.md), which Turso has not published to NuGet.
+    Source: https://github.com/tursodatabase/turso/tree/v0.8.3/bindings/dotnet/src/Turso.EntityFrameworkCore.Sqlite
+    (commit 607bff9fd0e547a25a97b3bf06e83bcc5d99d53c).
+    Local change: Query/Internal/TursoSqliteQueryableMethodTranslatingExpressionVisitor.cs uses
+    JsonQueryExpression.StructuralType (EF Core 10) instead of the removed EntityType property.
+    Replace this project with the NuGet package if Turso publishes one for EF Core 10.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Turso.EntityFrameworkCore.Sqlite</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <AnalysisMode>None</AnalysisMode>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <NoWarn>$(NoWarn);EF1001;1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite.Core" Version="10.0.5" />
+    <PackageReference Include="Turso.Data.Sqlite.Provider" Version="0.8.3" />
+  </ItemGroup>
+
+</Project>

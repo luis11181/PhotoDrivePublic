@@ -9,13 +9,13 @@ public abstract class BaseEntity
 
 public abstract class AuditableEntity : BaseEntity
 {
-    // // these annotation does not guarantee that the database will generate the value, this must be set in the db context model builder
+    // // these annotation does not guarantee that the database will generate the value, this must be set in the db context model builder 
     // [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public DateTime? CreatedDate { get; set; }
 
     public string? CreatedBy { get; set; }
 
-    // // these annotation does not guarantee that the database will generate the value, this must be set in the db context model builder
+    // // these annotation does not guarantee that the database will generate the value, this must be set in the db context model builder 
     // [DatabaseGenerated(DatabaseGeneratedOption.Computed)] //The database generates a value when a row is inserted or updated.
     public DateTime? UpdatedDate { get; set; }
 

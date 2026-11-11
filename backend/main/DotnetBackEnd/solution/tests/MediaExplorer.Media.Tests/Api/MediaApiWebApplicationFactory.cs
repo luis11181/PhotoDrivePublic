@@ -16,15 +16,19 @@ internal sealed class MediaApiWebApplicationFactory : WebApplicationFactory<Prog
     private readonly Dictionary<string, string?> _previousEnvironment = new(StringComparer.Ordinal);
 
     public const string OwnerEmail = "mediaexplorer.dev@example.test";
-    public const string OwnerPassword = "MediaExplorerDev!2026";
+    public const string OwnerPassword = "PhotoDriveDev!2026";
     public TestObjectStoreFactory ObjectStore { get; } = new();
+    public FakeDatabaseBackupRemoteStore BackupStore { get; } = new();
 
     public MediaApiWebApplicationFactory()
     {
         Directory.CreateDirectory(_root);
+        Directory.CreateDirectory(Path.Combine(_root, "imports", "Takeout"));
+        SetEnvironment("MediaStorage__Imports__SourceDirectory", Path.Combine(_root, "imports"));
         SetEnvironment("ASPNETCORE_ENVIRONMENT", "Development");
-        SetEnvironment("ConnectionStrings__MediaCatalog", $"Data Source={Path.Combine(_root, "catalog.db")};Foreign Keys=True;Pooling=False");
-        SetEnvironment("ConnectionStrings__UsersModule", $"Data Source={Path.Combine(_root, "users.db")};Foreign Keys=True;Pooling=False");
+        // One local Turso file; never the Development cloud database configured in infrastructure.Development.json.
+        SetEnvironment("Database__Url", Path.Combine(_root, "photodrive.db"));
+        SetEnvironment("Security__DataProtectionKeysDirectory", Path.Combine(_root, "keys"));
         SetEnvironment("Startup__DevelopmentDatabaseInitializationMode", "Migrate");
         SetEnvironment("Security__RequireHttps", "false");
         SetEnvironment("JwtSettings__AccessTokenSecret", "integration-tests-access-token-secret-key-2026");
@@ -35,11 +39,6 @@ internal sealed class MediaApiWebApplicationFactory : WebApplicationFactory<Prog
         SetEnvironment("FamilyAuthentication__BootstrapOwner__DisplayName", "Integration Owner");
         SetEnvironment("FamilyAuthentication__BootstrapOwner__InitialPassword", OwnerPassword);
         SetEnvironment("UserSeeding__DevelopmentDefaultUser__Enabled", "true");
-        SetEnvironment("UserSeeding__DevelopmentDefaultUser__Email", OwnerEmail);
-        SetEnvironment("UserSeeding__DevelopmentDefaultUser__Password", OwnerPassword);
-        SetEnvironment("UserSeeding__DevelopmentDefaultUser__FirstName", "Integration");
-        SetEnvironment("UserSeeding__DevelopmentDefaultUser__LastName", "Owner");
-        SetEnvironment("UserSeeding__DevelopmentDefaultUser__Role", "OWNER");
         SetEnvironment("MediaStorage__Backups__ScheduleEnabled", "false");
         SetEnvironment("MediaStorage__LocalDisk__StagingDirectory", Path.Combine(_root, "staging"));
         SetEnvironment("MediaStorage__LocalDisk__ThumbnailDirectory", Path.Combine(_root, "thumbnails"));
@@ -53,8 +52,7 @@ internal sealed class MediaApiWebApplicationFactory : WebApplicationFactory<Prog
         builder.UseEnvironment("Development");
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ConnectionStrings:MediaCatalog"] = $"Data Source={Path.Combine(_root, "catalog.db")};Foreign Keys=True;Pooling=False",
-            ["ConnectionStrings:UsersModule"] = $"Data Source={Path.Combine(_root, "users.db")};Foreign Keys=True;Pooling=False",
+            ["Database:Url"] = Path.Combine(_root, "photodrive.db"),
             ["Startup:DevelopmentDatabaseInitializationMode"] = "Migrate",
             ["Security:RequireHttps"] = "false",
             ["JwtSettings:AccessTokenSecret"] = "integration-tests-access-token-secret-key-2026",
@@ -65,11 +63,6 @@ internal sealed class MediaApiWebApplicationFactory : WebApplicationFactory<Prog
             ["FamilyAuthentication:BootstrapOwner:DisplayName"] = "Integration Owner",
             ["FamilyAuthentication:BootstrapOwner:InitialPassword"] = OwnerPassword,
             ["UserSeeding:DevelopmentDefaultUser:Enabled"] = "true",
-            ["UserSeeding:DevelopmentDefaultUser:Email"] = OwnerEmail,
-            ["UserSeeding:DevelopmentDefaultUser:Password"] = OwnerPassword,
-            ["UserSeeding:DevelopmentDefaultUser:FirstName"] = "Integration",
-            ["UserSeeding:DevelopmentDefaultUser:LastName"] = "Owner",
-            ["UserSeeding:DevelopmentDefaultUser:Role"] = "OWNER",
             ["MediaStorage:Backups:ScheduleEnabled"] = "false",
             ["MediaStorage:LocalDisk:StagingDirectory"] = Path.Combine(_root, "staging"),
             ["MediaStorage:LocalDisk:ThumbnailDirectory"] = Path.Combine(_root, "thumbnails"),
@@ -83,6 +76,8 @@ internal sealed class MediaApiWebApplicationFactory : WebApplicationFactory<Prog
             services.AddSingleton<IObjectStoreFactory>(ObjectStore);
             services.RemoveAll<IMediaMetadataExtractor>();
             services.AddSingleton<IMediaMetadataExtractor, IntegrationMetadataExtractor>();
+            services.RemoveAll<IDatabaseBackupRemoteStore>();
+            services.AddSingleton<IDatabaseBackupRemoteStore>(BackupStore);
         });
     }
 

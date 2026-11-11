@@ -32,10 +32,10 @@ internal sealed class TimelineEventService(
         }
         else
         {
-            var ftsQuery = ToFtsQuery(query);
-            if (ftsQuery is null)
+            var searchTerms = SearchText.Terms(query);
+            if (searchTerms is null)
                 return MediaErrors.Validation("Enter at least two letters or numbers to search timeline events.");
-            events = await SearchAsync(library.Id, ftsQuery, Math.Clamp(limit, 1, 50), cancellationToken);
+            events = await SearchAsync(library.Id, searchTerms, Math.Clamp(limit, 1, 50), cancellationToken);
         }
 
         return new TimelineEventsRes { Events = events.Select(ToResponse).ToList() };
@@ -118,7 +118,7 @@ internal sealed class TimelineEventService(
 
     private async Task<List<TimelineEvent>> SearchAsync(
         Guid libraryId,
-        string query,
+        IReadOnlyList<string> terms,
         int limit,
         CancellationToken cancellationToken)
     {
@@ -128,17 +128,19 @@ internal sealed class TimelineEventService(
         try
         {
             await using var command = connection.CreateCommand();
-            command.CommandText = """
+            // Every term must match the title or description; events matching entirely in the title rank first.
+            var match = SearchText.MatchAll(command, terms, "q", "search.title", "search.description");
+            var titleMatch = SearchText.MatchAll(command, terms, "t", "search.title");
+            command.CommandText = $"""
                 SELECT item.Id
-                FROM timeline_event_search
-                JOIN timeline_events item ON item.Id = timeline_event_search.event_id COLLATE NOCASE
-                WHERE timeline_event_search MATCH $query
-                  AND timeline_event_search.library_id = $libraryId COLLATE NOCASE
-                ORDER BY bm25(timeline_event_search, 0.0, 0.0, 4.0, 1.0), item.StartDate DESC, item.Id
+                FROM timeline_event_search search
+                JOIN timeline_events item ON item.Id = search.event_id COLLATE NOCASE
+                WHERE ({match})
+                  AND search.library_id = $libraryId COLLATE NOCASE
+                ORDER BY CASE WHEN {titleMatch} THEN 0 ELSE 1 END, item.StartDate DESC, item.Id
                 LIMIT $limit;
                 """;
-            AddParameter(command, "$query", query);
-            AddParameter(command, "$libraryId", libraryId.ToString("D"));
+            AddParameter(command, "$libraryId", libraryId.ToDbText());
             AddParameter(command, "$limit", limit);
             var ids = new List<Guid>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -168,15 +170,6 @@ internal sealed class TimelineEventService(
         return new EventValues(normalizedTitle, startDate, endDate, normalizedDescription);
     }
 
-    private static string? ToFtsQuery(string? query)
-    {
-        var terms = (query ?? string.Empty)
-            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(term => term.Any(char.IsLetterOrDigit))
-            .ToArray();
-        if (terms.Sum(term => term.Count(char.IsLetterOrDigit)) < 2) return null;
-        return string.Join(" AND ", terms.Select(term => "\"" + term.Replace("\"", "\"\"") + "\"*"));
-    }
 
     private static void AddParameter(IDbCommand command, string name, object value)
     {

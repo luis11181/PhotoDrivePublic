@@ -218,6 +218,65 @@
 .library-section {
   margin-top: 34px;
 }
+.catalog-loading {
+  margin-top: 16px;
+}
+.catalog-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+.catalog-skeleton {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.catalog-skeleton-image,
+.catalog-skeleton-label {
+  display: block;
+  background: var(--surface-muted);
+}
+.catalog-skeleton-image {
+  aspect-ratio: 1.4;
+}
+.catalog-skeleton-label {
+  width: 65%;
+  height: 10px;
+  margin: 18px 14px;
+  border-radius: 4px;
+}
+.catalog-skeleton-photos .catalog-skeleton-image {
+  aspect-ratio: 1;
+}
+.catalog-skeleton-list {
+  display: grid;
+  gap: 8px;
+}
+.catalog-skeleton-list .catalog-skeleton {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+}
+.catalog-skeleton-list .catalog-skeleton-image {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+}
+.catalog-skeleton-list .catalog-skeleton-label {
+  width: 35%;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .catalog-skeleton-image,
+  .catalog-skeleton-label {
+    animation: catalog-loading-pulse 1.6s ease-in-out infinite alternate;
+  }
+}
+@keyframes catalog-loading-pulse {
+  to {
+    opacity: 0.45;
+  }
+}
 .album-back-link {
   min-height: 30px;
   margin: 0 0 14px -7px;
@@ -1076,6 +1135,10 @@
 
 .item-context-menu {
   width: 224px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   position: fixed;
   z-index: 85;
   padding: 6px;
@@ -1156,6 +1219,26 @@
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 25px;
+}
+.catalog-filters {
+  margin-top: 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.catalog-filter-toggle {
+  display: none;
+}
+.catalog-filters .photo-filter-row,
+.catalog-filters .file-sort-row {
+  margin-top: 0;
+}
+.catalog-filters .filter-select select {
+  background: var(--surface-control);
+}
+.catalog-filters .filter-reset {
+  margin-left: auto;
 }
 .photo-filter-row {
   display: flex;

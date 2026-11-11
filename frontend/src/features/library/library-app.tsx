@@ -1654,6 +1654,25 @@ export function LibraryApp({
               selectedIds={selectedIds}
               fileViewMode={fileViewMode}
               query={query}
+              hasActiveFilters={
+                view === "photos"
+                  ? hasActivePhotoFilters
+                  : fileType !== "all" || filesFavorite || Boolean(selectedTagId) || searchIncludesPhotos
+              }
+              onClearFilters={() => {
+                setQuery("");
+                setPhotoScope("folder");
+                setMediaType("all");
+                setPhotoSort("captured_desc");
+                setPhotoYear(undefined);
+                setPhotosFavorite(false);
+                setSelectedTimelineEvent(null);
+                setFileType("all");
+                setFilesFavorite(false);
+                setSelectedTagId("");
+                setSearchIncludesPhotos(false);
+                setFileSearchScope("subtree");
+              }}
               pending={activeQuery.isPending && !demoMode}
               errorMessage={
                 activeQuery.isError ? activeQuery.error.message : undefined

@@ -16,7 +16,7 @@ namespace CSSApps.Users.Application.Services.Auth.JwtAuth;
 
 /// <summary>
 /// Service responsible for JWT token generation and validation.
-///
+/// 
 /// Handles two types of tokens:
 /// - Access Token: Short-lived JWT for API authentication (always generated)
 /// - Refresh Token: Long-lived, opaque, rotating credential stored only as a hash
@@ -82,12 +82,12 @@ internal sealed class JwtAuth
 
     /// <summary>
     /// Generates claims for the access token.
-    ///
-    /// Includes both JWT registered claim names (for token compatibility) and
+    /// 
+    /// Includes both JWT registered claim names (for token compatibility) and 
     /// standard ClaimTypes (for ClaimsIdentity compatibility).
     /// This ensures User.Identity.Name and User.Claims work correctly across
     /// all authentication methods (JWT, Cookie, API Key).
-    ///
+    /// 
     /// Claims included:
     /// - sub/NameIdentifier: User ID
     /// - unique_name/Name: User's full name (for User.Identity.Name)
@@ -98,26 +98,26 @@ internal sealed class JwtAuth
     private static ClaimsIdentity GenerateClaims(User user, UserSession session)
     {
         var ci = new ClaimsIdentity();
-
+        
         // User ID - JWT standard + ClaimTypes for compatibility
         ci.AddClaim(new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()));
         ci.AddClaim(new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()));
-
+        
         // User Name - both formats for User.Identity.Name compatibility
         // Note: JwtSecurityTokenHandler maps ClaimTypes.Name to "unique_name" in JWT
         ci.AddClaim(new Claim(JwtRegisteredClaimNames.Name, user.Name.FullName));
         ci.AddClaim(new Claim(ClaimTypes.Name, user.Name.FullName));
-
+        
         // Given name
         ci.AddClaim(new Claim(JwtRegisteredClaimNames.GivenName, user.Name.FullName));
-
+        
         // Email
         ci.AddClaim(new Claim(JwtRegisteredClaimNames.Email, user.Email));
         ci.AddClaim(new Claim("security_stamp", user.SecurityStamp.ToString("N")));
         ci.AddClaim(new Claim("session_id", session.Id.ToString()));
         if (user.MustChangePassword) ci.AddClaim(new Claim("must_change_password", "true"));
 
-        //Roles and permissions are added via Claims Transformation on each request
+        // Roles are added by AddUserRolesClaimsTransformation on each request
         // foreach (var role in user.Roles)
         // {
         //     ci.AddClaim(new Claim("role", role.Name));

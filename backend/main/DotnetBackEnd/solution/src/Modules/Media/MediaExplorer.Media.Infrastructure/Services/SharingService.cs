@@ -70,14 +70,14 @@ internal sealed class SharingService(
 
     public async Task<Result<BrowseItemsRes>> SearchSharedAsync(Guid userId, string query, string type, string? cursor, int limit, Guid? tagId, CancellationToken cancellationToken)
     {
-        var ftsQuery = ToSharedFtsQuery(query);
-        if (ftsQuery is null) return MediaErrors.Validation("Enter at least two letters or numbers to search shared items.");
+        var searchTerms = SearchText.Terms(query);
+        if (searchTerms is null) return MediaErrors.Validation("Enter at least two letters or numbers to search shared items.");
         var normalizedType = NormalizeType(type);
         if (normalizedType is null) return MediaErrors.Validation("File type must be all, folder, document, pdf, spreadsheet, image, or video.");
         if (tagId.HasValue) return MediaErrors.Validation("Private library tags cannot filter shared items.");
 
         var offset = DecodeSearchCursor(cursor);
-        var candidates = await SharedSearchCandidatesAsync(userId, ftsQuery, normalizedType, offset, limit, cancellationToken);
+        var candidates = await SharedSearchCandidatesAsync(userId, searchTerms, normalizedType, offset, limit, cancellationToken);
         if (candidates.Count == 0) return new BrowseItemsRes();
 
         var pageCandidates = candidates.Take(limit).ToArray();
@@ -257,7 +257,7 @@ internal sealed class SharingService(
         return folders;
     }
 
-    private async Task<List<SharedSearchCandidate>> SharedSearchCandidatesAsync(Guid userId, string query, string type, int offset, int limit, CancellationToken cancellationToken)
+    private async Task<List<SharedSearchCandidate>> SharedSearchCandidatesAsync(Guid userId, IReadOnlyList<string> terms, string type, int offset, int limit, CancellationToken cancellationToken)
     {
         var connection = dbContext.Database.GetDbConnection();
         var openedHere = connection.State != ConnectionState.Open;
@@ -265,6 +265,8 @@ internal sealed class SharingService(
         try
         {
             await using var command = connection.CreateCommand();
+            // Shared search matches names only: owner tags stay private to the owning library.
+            var match = SearchText.MatchAll(command, terms, "q", "catalog_search.name");
             command.CommandText = """
                 WITH RECURSIVE shared_folder_paths(item_id, library_id, owner_user_id, shared_at) AS (
                     SELECT folder.Id, folder.LibraryId, library.OwnerUserId, share.CreatedAt
@@ -321,7 +323,7 @@ internal sealed class SharingService(
                   ON catalog_search.kind = 'file'
                  AND catalog_search.item_id = shared_files.item_id COLLATE NOCASE
                  AND catalog_search.library_id = shared_files.library_id COLLATE NOCASE
-                WHERE catalog_search MATCH $query
+                WHERE {match}
                   AND (
                     (catalog_search.kind = 'folder'
                       AND shared_folders.item_id IS NOT NULL
@@ -346,11 +348,10 @@ internal sealed class SharingService(
                           )
                       ))
                   )
-                ORDER BY rank, catalog_search.item_id
+                ORDER BY catalog_search.name, catalog_search.item_id
                 LIMIT $limit OFFSET $offset;
-                """;
-            AddParameter(command, "$query", query);
-            AddParameter(command, "$userId", userId.ToString("D"));
+                """.Replace("{match}", match, StringComparison.Ordinal);
+            AddParameter(command, "$userId", userId.ToDbText());
             AddParameter(command, "$role", CatalogShare.ViewerRole);
             AddParameter(command, "$type", type);
             AddParameter(command, "$limit", limit + 1);
@@ -440,16 +441,6 @@ internal sealed class SharingService(
         catch (FormatException) { return 0; }
     }
 
-    private static string? ToSharedFtsQuery(string? query)
-    {
-        var terms = (query ?? string.Empty)
-            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(term => term.Any(char.IsLetterOrDigit))
-            .ToArray();
-        if (terms.Sum(term => term.Count(char.IsLetterOrDigit)) < 2) return null;
-        var expression = string.Join(" AND ", terms.Select(term => "\"" + term.Replace("\"", "\"\"") + "\"*"));
-        return $"name : ({expression})";
-    }
 
     private static int DecodeSearchCursor(string? cursor)
     {

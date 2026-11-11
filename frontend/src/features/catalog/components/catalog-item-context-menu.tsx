@@ -12,7 +12,7 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { usePreferences } from "@/lib/preferences";
 import type { CatalogContextMenuState } from "../use-catalog-context-menu";
 
@@ -54,6 +54,23 @@ export function CatalogItemContextMenu({
   const { t } = usePreferences();
   const menuRef = useRef<HTMLDivElement>(null);
   const item = state.item;
+
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    const position = () => {
+      menu.style.left = `${Math.max(8, Math.min(state.x, window.innerWidth - menu.offsetWidth - 8))}px`;
+      menu.style.top = `${Math.max(8, Math.min(state.y, window.innerHeight - menu.offsetHeight - 8))}px`;
+    };
+    position();
+    const observer = new ResizeObserver(position);
+    observer.observe(menu);
+    window.addEventListener("resize", position);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", position);
+    };
+  }, [state.x, state.y]);
 
   useEffect(() => {
     function close(event: PointerEvent) {
@@ -148,14 +165,17 @@ export function CatalogItemContextMenu({
           disabled={busy}
         />
       )}
-      {item.kind !== "folder" && item.accessRole !== "viewer" && !item.trashedAt && onCopy && (
-        <MenuButton
-          icon={<Copy />}
-          label={t("files.makeCopy")}
-          onClick={() => run(onCopy)}
-          disabled={busy}
-        />
-      )}
+      {item.kind !== "folder" &&
+        item.accessRole !== "viewer" &&
+        !item.trashedAt &&
+        onCopy && (
+          <MenuButton
+            icon={<Copy />}
+            label={t("files.makeCopy")}
+            onClick={() => run(onCopy)}
+            disabled={busy}
+          />
+        )}
       {extraActions?.map((action) => (
         <MenuButton
           key={action.label}

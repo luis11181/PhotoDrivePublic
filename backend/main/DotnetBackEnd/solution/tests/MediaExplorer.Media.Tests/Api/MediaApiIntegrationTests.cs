@@ -100,6 +100,15 @@ public sealed class MediaApiIntegrationTests
         using var memberClient = factory.CreateClient(ClientOptions());
         var memberCsrf = await LoginAsync(memberClient, member.Email, member.Password);
         (await memberClient.GetAsync(Relative("/api/v1/developer/maintenance/backup-status"))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        foreach (var route in new[] { "/api/v1/imports", "/api/v1/imports/options", "/api/v1/imports/source-folders" })
+            (await memberClient.GetAsync(Relative(route))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await SendJsonAsync(memberClient, HttpMethod.Post, "/api/v1/imports/google-takeout", new { sourcePath = "", destinationFolderId = folderId }, memberCsrf)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await SendJsonAsync(memberClient, HttpMethod.Post, $"/api/v1/imports/{Guid.NewGuid()}/retry", new { }, memberCsrf)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var sources = await owner.GetAsync(Relative("/api/v1/imports/source-folders"));
+        sources.StatusCode.Should().Be(HttpStatusCode.OK);
+        var sourceJson = await sources.Content.ReadAsStringAsync();
+        sourceJson.Should().Contain("Takeout").And.NotContain("media-explorer-api-tests-");
+        (await owner.GetAsync(Relative("/api/v1/imports/source-folders?path=..%2Fprivate"))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         var bytes = "0123456789abcdef"u8.ToArray();
         var itemId = await UploadAsync(owner, ownerCsrf, bytes, folderId);

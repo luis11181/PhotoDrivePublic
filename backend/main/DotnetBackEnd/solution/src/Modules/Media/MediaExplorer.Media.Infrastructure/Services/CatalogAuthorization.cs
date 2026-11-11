@@ -29,10 +29,13 @@ internal sealed class CatalogAuthorization(MediaCatalogDbContext dbContext)
             .Select(share => share.FileId!.Value).ToListAsync(cancellationToken);
         var fileIds = directFileIds.ToHashSet();
         var albumFileIds = await (
-            from share in dbContext.CatalogShares.AsNoTracking()
-            join membership in dbContext.AlbumItems.AsNoTracking() on share.AlbumId equals membership.AlbumId
+            from membership in dbContext.AlbumItems.AsNoTracking()
+            join album in dbContext.Albums.AsNoTracking() on membership.AlbumId equals album.Id
+            join library in dbContext.Libraries.AsNoTracking() on album.LibraryId equals library.Id
             join file in dbContext.Files.AsNoTracking() on membership.FileId equals file.Id
-            where share.RecipientUserId == userId && share.Role == Domain.CatalogShare.ViewerRole && file.TrashedAt == null
+            where file.TrashedAt == null && (library.OwnerUserId == userId
+                || dbContext.CatalogShares.Any(share => share.AlbumId == album.Id && share.RecipientUserId == userId
+                    && (share.Role == Domain.CatalogShare.ViewerRole || share.Role == Domain.CatalogShare.CollaboratorRole)))
             select membership.FileId).Distinct().ToListAsync(cancellationToken);
         fileIds.UnionWith(albumFileIds);
         if (folderIds.Count > 0)
@@ -61,10 +64,13 @@ internal sealed class CatalogAuthorization(MediaCatalogDbContext dbContext)
             share => share.FileId == fileId && share.RecipientUserId == userId && share.Role == Domain.CatalogShare.ViewerRole,
             cancellationToken);
         var sharedThroughAlbum = await (
-            from share in dbContext.CatalogShares.AsNoTracking()
-            join membership in dbContext.AlbumItems.AsNoTracking() on share.AlbumId equals membership.AlbumId
-            where membership.FileId == fileId && share.RecipientUserId == userId && share.Role == Domain.CatalogShare.ViewerRole
-            select share.Id).AnyAsync(cancellationToken);
+            from membership in dbContext.AlbumItems.AsNoTracking()
+            join album in dbContext.Albums.AsNoTracking() on membership.AlbumId equals album.Id
+            join library in dbContext.Libraries.AsNoTracking() on album.LibraryId equals library.Id
+            where membership.FileId == fileId && (library.OwnerUserId == userId
+                || dbContext.CatalogShares.Any(share => share.AlbumId == album.Id && share.RecipientUserId == userId
+                    && (share.Role == Domain.CatalogShare.ViewerRole || share.Role == Domain.CatalogShare.CollaboratorRole)))
+            select membership.FileId).AnyAsync(cancellationToken);
         if (directlyShared || sharedThroughAlbum || await HasFolderGrantAsync(userId, item.LibraryId, item.ParentFolderId, cancellationToken))
             return new CatalogAccess(item.LibraryId, item.OwnerUserId, false);
         return null;

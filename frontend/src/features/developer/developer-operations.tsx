@@ -38,6 +38,7 @@ import {
 } from "@/lib/api";
 import { formatBytes, formatNumber } from "@/lib/formatting";
 import { usePreferences } from "@/lib/preferences";
+import { ServerHostsPanel } from "./server-hosts-panel";
 
 const activeStates = ["pending", "running", "cancelling"];
 
@@ -174,6 +175,13 @@ export function DeveloperOperations({ currentUser }: { currentUser: CurrentUser 
 
       {(error || message) && <p className={error ? "auth-error" : "auth-success"} role="status">{error || message}</p>}
 
+      <nav className="developer-section-nav" aria-label={locale === "es" ? "Secciones de herramientas" : "Tool sections"}>
+        <a href="#owner-health-title">{locale === "es" ? "Estado" : "Health"}</a>
+        <a href="#installation-details" onClick={() => document.getElementById("installation-details")?.setAttribute("open", "")}>{locale === "es" ? "Instalación" : "Installation"}</a>
+        <a href="#servers">{locale === "es" ? "Servidores" : "Servers"}</a>
+        <a href="#cache-preparation">{locale === "es" ? "Preparar vistas previas" : "Prepare previews"}</a>
+        <a href="#storage-safety">{locale === "es" ? "Respaldo y recuperación" : "Backup & recovery"}</a>
+      </nav>
       <OwnerHealthCenter
         backup={backupStatus.data}
         backupFailed={backupStatus.isError}
@@ -188,7 +196,7 @@ export function DeveloperOperations({ currentUser }: { currentUser: CurrentUser 
         optionsFailed={options.isError}
       />
 
-      <section className="imports-panel developer-overview">
+      <details className="imports-panel developer-overview" id="installation-details"><summary className="developer-details-summary">{locale === "es" ? "Detalles de la instalación" : "Installation details"}</summary>
         <div className="imports-section-heading">
           <div>
             <h2>{t("developer.overview")}</h2>
@@ -210,7 +218,9 @@ export function DeveloperOperations({ currentUser }: { currentUser: CurrentUser 
           </div>
         ) : <p className="auth-error">{t("developer.configurationFailed")}</p>}
         <p className="auth-copy developer-overview-note">{t("developer.overviewNote")}</p>
-      </section>
+      </details>
+
+      <ServerHostsPanel locale={locale} />
 
       <section className="imports-panel" id="cache-preparation">
         <div className="imports-section-heading">
@@ -339,7 +349,7 @@ function OwnerHealthCenter({
   options?: CacheBuildOptions;
   optionsFailed: boolean;
 }) {
-  const { t } = usePreferences();
+  const { locale, t } = usePreferences();
   const backupTone: HealthTone = backupFailed || operationalFailed
     ? "attention"
     : !backup || !operational
@@ -422,6 +432,13 @@ function OwnerHealthCenter({
               : t("developer.healthBackupAttention")}
           icon={<ShieldCheck />}
           label={t("developer.healthBackup")}
+          meta={backupFailed
+            ? undefined
+            : backup?.lastRemoteVerifiedAt
+              ? `${t("developer.lastBackup")}: ${new Date(backup.lastRemoteVerifiedAt).toLocaleString(locale === "es" ? "es-ES" : "en-US")} · ${formatBackupAge(backup.ageHours, t)}`
+              : backup
+                ? `${t("developer.lastBackup")}: ${t("developer.notRecorded")}`
+                : undefined}
           tone={backupTone}
         />
         <HealthCard
@@ -505,12 +522,13 @@ function OwnerHealthCenter({
   );
 }
 
-function HealthCard({ action, actionLabel, detail, icon, label, tone }: {
+function HealthCard({ action, actionLabel, detail, icon, label, meta, tone }: {
   action?: string;
   actionLabel: string;
   detail: string;
   icon: React.ReactNode;
   label: string;
+  meta?: string;
   tone: HealthTone;
 }) {
   const { t } = usePreferences();
@@ -524,6 +542,7 @@ function HealthCard({ action, actionLabel, detail, icon, label, tone }: {
       </div>
       <h3>{label}</h3>
       <p>{detail}</p>
+      {meta && <p className="developer-health-card-meta">{meta}</p>}
       {action && <a href={action}>{actionLabel}</a>}
     </article>
   );

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Asp.Versioning;
 using CSSApps.Shared.Contracts.APICommons;
 using CSSApps.Shared.Utils.ApiHelpers.Filters;
@@ -53,9 +54,9 @@ public sealed class DeveloperMaintenanceController(IMediaMaintenanceService main
         return this.ToApiResult(result);
     }
 
-    /// <summary>Creates, restore-verifies, and remotely verifies one catalog-and-Users backup set without scanning original storage.</summary>
+    /// <summary>Creates, verifies, and remotely verifies one database backup set without scanning original storage.</summary>
     /// <remarks>
-    /// This CSRF-protected owner action runs the same timestamp-matched catalog and Users SQLite snapshots, restore/integrity/foreign-key/reference verification, optional configured BOM-free JSONL/checksum exports for both databases, dedicated backup-bucket upload, and remote checksum/length verification used by the recurring backup worker. It never inventories or deletes original S3 objects, manifests, catalog items, or caches.
+    /// This CSRF-protected owner action runs the same steps as the weekly scheduled backup: a consistent snapshot of the whole database (catalog and accounts) converted to a plain SQLite file, integrity/foreign-key/coverage/user-reference verification, upload to the dedicated backup bucket, and remote checksum/length verification. It never inventories or deletes original S3 objects, manifests, catalog items, or caches.
     /// </remarks>
     [HttpPost("backup")]
     [RequireAntiforgeryToken]
@@ -77,5 +78,26 @@ public sealed class DeveloperMaintenanceController(IMediaMaintenanceService main
     {
         var result = await maintenanceService.CleanupAsync(request, cancellationToken);
         return this.ToApiResult(result);
+    }
+
+    /// <summary>Lists the PhotoDrive hosts that share this installation's database and which one is primary.</summary>
+    /// <remarks>
+    /// The primary host runs installation-wide background work: metadata extraction and the scheduled weekly database backup.
+    /// Imports and cache builds always run on the host that started them, because their files are local to that machine.
+    /// </remarks>
+    [HttpGet("hosts")]
+    [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiRes<ClusterHostsRes>))]
+    public async Task<IActionResult> Hosts(CancellationToken cancellationToken) =>
+        this.ToApiResult(await maintenanceService.GetHostsAsync(cancellationToken));
+
+    /// <summary>Makes another known host the primary host, for example before turning the current primary off.</summary>
+    /// <remarks>The previous primary stops starting new installation-wide work within about 30 seconds.</remarks>
+    [HttpPut("primary-host")]
+    [RequireAntiforgeryToken]
+    [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ApiRes<ClusterHostsRes>))]
+    public async Task<IActionResult> SetPrimaryHost([FromBody] SetPrimaryHostReq request, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId)) return Unauthorized(ApiRes.Unauthorized());
+        return this.ToApiResult(await maintenanceService.SetPrimaryHostAsync(userId, request, cancellationToken));
     }
 }

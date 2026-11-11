@@ -26,6 +26,25 @@ public sealed class MediaCatalogDbContext(DbContextOptions<MediaCatalogDbContext
     public DbSet<ImportItem> ImportItems => Set<ImportItem>();
     public DbSet<CacheBuildJob> CacheBuildJobs => Set<CacheBuildJob>();
     public DbSet<CacheBuildItem> CacheBuildItems => Set<CacheBuildItem>();
+    public DbSet<ServerHost> Hosts => Set<ServerHost>();
+    public DbSet<ClusterSettings> Cluster => Set<ClusterSettings>();
+
+    /// <summary>Saves and refreshes the derived search rows for changed names, titles, and tags atomically.</summary>
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        var search = await CatalogSearchIndex.CollectAsync(this, cancellationToken);
+        if (search.IsEmpty) return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+
+        var ownsTransaction = Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction ? await Database.BeginTransactionAsync(cancellationToken) : null;
+        var saved = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        await CatalogSearchIndex.ApplyAsync(this, search, cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        return saved;
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess) =>
+        SaveChangesAsync(acceptAllChangesOnSuccess).GetAwaiter().GetResult();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -255,6 +274,7 @@ public sealed class MediaCatalogDbContext(DbContextOptions<MediaCatalogDbContext
             entity.Property(job => job.State).HasMaxLength(32).IsRequired();
             entity.Property(job => job.Error).HasMaxLength(1000);
             entity.HasIndex(job => new { job.UserId, job.CreatedAt });
+            entity.HasIndex(job => new { job.HostId, job.State });
             entity.HasIndex(job => new { job.State, job.CreatedAt });
             entity.HasOne<Library>().WithMany().HasForeignKey(job => job.LibraryId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne<CatalogFolder>().WithMany().HasForeignKey(job => job.TargetFolderId).OnDelete(DeleteBehavior.SetNull);
@@ -286,6 +306,25 @@ public sealed class MediaCatalogDbContext(DbContextOptions<MediaCatalogDbContext
             entity.Property(job => job.Error).HasMaxLength(1000);
             entity.HasIndex(job => new { job.State, job.CreatedAt });
             entity.HasIndex(job => new { job.RequestedByUserId, job.CreatedAt });
+            entity.HasIndex(job => new { job.HostId, job.State });
+        });
+
+        modelBuilder.Entity<ServerHost>(entity =>
+        {
+            entity.ToTable("hosts");
+            entity.HasKey(host => host.Id);
+            entity.Property(host => host.Id).ValueGeneratedNever();
+            entity.Property(host => host.Name).HasMaxLength(200).IsRequired();
+        });
+
+        modelBuilder.Entity<ClusterSettings>(entity =>
+        {
+            entity.ToTable("cluster_settings", table => table.HasCheckConstraint("CK_cluster_settings_singleton", "\"Id\" = 1"));
+            entity.HasKey(settings => settings.Id);
+            entity.Property(settings => settings.Id).ValueGeneratedNever();
+            entity.Property(settings => settings.LastBackupSetId).HasMaxLength(64);
+            entity.Property(settings => settings.LastBackupFailureCode).HasMaxLength(64);
+            entity.HasOne<ServerHost>().WithMany().HasForeignKey(settings => settings.PrimaryHostId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<CacheBuildItem>(entity =>

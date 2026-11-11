@@ -9,10 +9,12 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatBytes } from "@/lib/formatting";
 import { usePreferences } from "@/lib/preferences";
 import { useUploadQueue, type UploadQueueItem } from "./upload-queue-provider";
+
+const COMPLETED_UPLOAD_DISMISS_DELAY_MS = 60_000;
 
 export function UploadQueueOverlay() {
   const { t } = usePreferences();
@@ -41,6 +43,9 @@ export function UploadQueueOverlay() {
   ).length;
   const completedCount = items.filter(
     (item) => item.state === "completed",
+  ).length;
+  const settledCount = items.filter(
+    (item) => item.state === "completed" || item.state === "skipped",
   ).length;
   const conflictCount = items.filter(
     (item) => item.state === "conflict",
@@ -74,6 +79,19 @@ export function UploadQueueOverlay() {
     .join("|");
   const panelOpen =
     open || (Boolean(attentionKey) && attentionKey !== dismissedAttentionKey);
+
+  useEffect(() => {
+    // Successful uploads do not need durable queue entries once their brief
+    // completion notice has been visible. Keep the queue open while someone is
+    // reviewing it, and never dismiss work that is active or needs attention.
+    if (panelOpen || activeCount > 0 || attentionCount > 0 || !settledCount)
+      return;
+    const timeout = window.setTimeout(() => {
+      void clearCompleted();
+    }, COMPLETED_UPLOAD_DISMISS_DELAY_MS);
+    return () => window.clearTimeout(timeout);
+  }, [activeCount, attentionCount, clearCompleted, panelOpen, settledCount]);
+
   const runBulkAction = async (action: () => Promise<void>) => {
     setBulkBusy(true);
     try {
@@ -143,9 +161,7 @@ export function UploadQueueOverlay() {
               </button>
             </div>
           </header>
-          <p className="upload-queue-explanation">
-            {t("upload.queueDurable")}
-          </p>
+          <p className="upload-queue-explanation">{t("upload.queueDurable")}</p>
           {(conflictCount > 1 || pendingCount > 0) && (
             <div className="upload-queue-bulk">
               {!confirmCancelAll ? (
@@ -155,18 +171,14 @@ export function UploadQueueOverlay() {
                       <button
                         type="button"
                         disabled={bulkBusy}
-                        onClick={() =>
-                          void runBulkAction(keepAllConflicts)
-                        }
+                        onClick={() => void runBulkAction(keepAllConflicts)}
                       >
                         {t("upload.queueKeepAll", { count: conflictCount })}
                       </button>
                       <button
                         type="button"
                         disabled={bulkBusy}
-                        onClick={() =>
-                          void runBulkAction(skipAllConflicts)
-                        }
+                        onClick={() => void runBulkAction(skipAllConflicts)}
                       >
                         {t("upload.queueSkipAll", { count: conflictCount })}
                       </button>
@@ -186,10 +198,7 @@ export function UploadQueueOverlay() {
                   )}
                 </div>
               ) : (
-                <div
-                  className="upload-queue-cancel-confirmation"
-                  role="alert"
-                >
+                <div className="upload-queue-cancel-confirmation" role="alert">
                   <p>
                     {t("upload.queueCancelAllConfirmation", {
                       count: pendingCount,
@@ -287,7 +296,16 @@ function UploadQueueRow({
           {label} · {formatBytes(item.receivedBytes)} /{" "}
           {formatBytes(item.sizeBytes)}
         </span>
-        {item.error && <small>{item.error}</small>}
+        {item.destination.albumName && (
+          <small>
+            {t("upload.queueAlbum", { name: item.destination.albumName })}
+          </small>
+        )}
+        {item.errorCode === "album" ? (
+          <small>{t("upload.queueAlbumFailed")}</small>
+        ) : (
+          item.error && <small>{item.error}</small>
+        )}
         {item.state === "completed" && item.duplicateState === "active" && (
           <small>{t("upload.queueDuplicateActive")}</small>
         )}

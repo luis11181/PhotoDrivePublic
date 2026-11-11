@@ -16,6 +16,7 @@ using MediaExplorer.Media.Application;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using CSSApps.Api.AccessControl;
+using CSSApps.Api.Operations;
 using Microsoft.FeatureManagement;
 
 namespace CSSApps.Api;
@@ -37,6 +38,9 @@ public class Program
 
     var app = builder.Build();
     if (await TryRunOfflineHostCommandAsync(app, args)) return;
+    var ownerRecovery = args.Length == 4 && args.Take(3).SequenceEqual(["users", "recover-owner", "--email"], StringComparer.OrdinalIgnoreCase);
+    if (args.Length > 0 && !args[0].StartsWith('-') && !ownerRecovery)
+      throw new ArgumentException("Unknown PhotoDrive command. Refusing to start the web server for an unrecognized operator command.");
     await ApplyDatabaseInitializationAndSeedAsync(app);
     if (await TryRunHostCommandAsync(app, args)) return;
     ConfigurePipeline(app);
@@ -59,7 +63,7 @@ public class Program
     {
       ValidateAuthenticationConfiguration(builder.Configuration);
       ProductionConfigurationValidator.Validate(builder.Configuration, builder.Environment);
-      await Console.Out.WriteLineAsync("Production configuration is valid.");
+      await Console.Out.WriteLineAsync($"{builder.Environment.EnvironmentName} configuration is valid.");
       return true;
     }
 
@@ -68,8 +72,24 @@ public class Program
 
   private static void ConfigureConfiguration(WebApplicationBuilder builder)
   {
+    var environmentName = builder.Environment.EnvironmentName;
+
     builder.Configuration
       .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+      .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true)
+      .AddJsonFile("authentication.json", optional: false, reloadOnChange: true)
+      .AddJsonFile($"authentication.{environmentName}.json", optional: true, reloadOnChange: true)
+      .AddJsonFile("logging.json", optional: true, reloadOnChange: true)
+      .AddJsonFile($"logging.{environmentName}.json", optional: true, reloadOnChange: true)
+      .AddJsonFile("infrastructure.json", optional: true, reloadOnChange: true)
+      .AddJsonFile($"infrastructure.{environmentName}.json", optional: true, reloadOnChange: true)
+      .AddJsonFile("usersSettings.json", optional: true, reloadOnChange: true)
+      .AddJsonFile($"usersSettings.{environmentName}.json", optional: true, reloadOnChange: true)
+      .AddJsonFile("deployment.json", optional: false, reloadOnChange: true)
+      .AddJsonFile($"deployment.{environmentName}.json", optional: true, reloadOnChange: true)
+      // Untracked secrets (database token, etc.); see secrets.example.json. Environment variables still override them.
+      .AddJsonFile("secrets.json", optional: true, reloadOnChange: true)
+      .AddJsonFile($"secrets.{environmentName}.json", optional: true, reloadOnChange: true)
       .AddEnvironmentVariables();
   }
 
@@ -91,7 +111,7 @@ public class Program
         : CookieSecurePolicy.SameAsRequest;
     });
 
-    if (!builder.Environment.IsDevelopment())
+    // Persisted in every environment so sign-in and CSRF cookies stay valid across restarts.
     {
       var keyDirectory = Path.GetFullPath(builder.Configuration["Security:DataProtectionKeysDirectory"]!);
       Directory.CreateDirectory(keyDirectory);
@@ -147,12 +167,13 @@ public class Program
 
     builder.Services.AddMyAuthentication(builder.Configuration);
     builder.Services.AddMyRateLimiter(builder.Configuration);
+    // Must precede the shared handlers so cloud outages map to an explicit 503 before the generic 500.
+    builder.Services.AddExceptionHandler<DatabaseUnavailableExceptionHandler>();
     builder.Services.AddMyErrorHandlers(builder.Environment);
     builder.Services.AddUsersModule(builder.Configuration, builder.Environment);
     builder.Services.AddScoped<IShareRecipientDirectory, FamilyShareRecipientDirectory>();
     builder.Services.AddScoped<IUploaderIdentityDirectory, FamilyUploaderIdentityDirectory>();
     builder.Services.AddMediaInfrastructure(builder.Configuration);
-    builder.Services.AddScoped<OperatorDatabaseRestoreService>();
   }
 
   /// <summary>
@@ -210,6 +231,8 @@ public class Program
     app.UseMiddleware<CorrelationIdMiddleware>();
     app.UseMiddleware<OperationLoggingMiddleware>();
     app.UseMyErrorHandlers();
+    // Before authentication: session checks already read through the chosen database route.
+    app.UseMiddleware<DatabaseRouteMiddleware>();
     app.UseCors("Frontend");
     app.UseMyAuthentication();
     app.UseMyRateLimiter();
@@ -222,49 +245,52 @@ public class Program
     configuration.GetValue<bool?>("Security:RequireHttps") ?? !environment.IsDevelopment();
 
   /// <summary>
-  /// Runs deployment commands before normal startup touches either configured database.
-  /// Restore remains an offline operation; the operator must stop the API first.
+  /// Runs operator commands before normal startup. Each exits without starting the web server.
   /// </summary>
   private static async Task<bool> TryRunOfflineHostCommandAsync(WebApplication app, string[] args)
   {
     if (args.SequenceEqual(["database", "migrate", "--confirm", "MIGRATE"], StringComparer.Ordinal))
     {
-      await using var scope = app.Services.CreateAsyncScope();
-      var users = scope.ServiceProvider.GetRequiredService<UsersDbContext>();
-      var catalog = scope.ServiceProvider.GetRequiredService<MediaCatalogDbContext>();
-      Console.WriteLine("Applying Users database migrations.");
-      await users.Database.MigrateAsync();
-      Console.WriteLine("Applying Media catalog migrations.");
-      await catalog.Database.MigrateAsync();
-      Console.WriteLine("Database migrations completed.");
+      await MigrateAsync(app);
       return true;
     }
 
+    // One-time move of the previous two-file SQLite installation into a new, empty Turso database.
+    // REMOVE-WITH-SQLITE-IMPORT: part of the one-time v1 (SQLite) to v2 (Turso) import. Development was imported on 2026-11-09 and Production on 2026-11-10; delete it once the v1 files are no longer kept (search the repo for this marker).
     if (args.Length >= 2 &&
-        string.Equals(args[0], "maintenance", StringComparison.OrdinalIgnoreCase) &&
-        string.Equals(args[1], "restore", StringComparison.OrdinalIgnoreCase))
+        string.Equals(args[0], "database", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(args[1], "import-sqlite", StringComparison.OrdinalIgnoreCase))
     {
       var catalogPath = ReadOption(args, "--catalog");
       var usersPath = ReadOption(args, "--users");
       if (string.IsNullOrWhiteSpace(catalogPath) || string.IsNullOrWhiteSpace(usersPath))
-        throw new ArgumentException("Restore requires --catalog <snapshot> and --users <snapshot>.");
+        throw new ArgumentException("Import requires --catalog <catalog.db> and --users <users.db>.");
+      if (!string.Equals(ReadOption(args, "--confirm"), "IMPORT", StringComparison.Ordinal))
+        throw new ArgumentException("Importing requires --confirm IMPORT.");
 
-      var apply = args.Contains("--apply", StringComparer.OrdinalIgnoreCase);
-      if (apply && !string.Equals(ReadOption(args, "--confirm"), "RESTORE", StringComparison.Ordinal))
-        throw new ArgumentException("Applying a restore requires --confirm RESTORE.");
-
+      await MigrateAsync(app);
       await using var scope = app.Services.CreateAsyncScope();
-      var restore = scope.ServiceProvider.GetRequiredService<OperatorDatabaseRestoreService>();
-      var result = apply
-        ? await restore.ApplyAsync(catalogPath, usersPath, CancellationToken.None)
-        : await restore.VerifyAsync(catalogPath, usersPath, CancellationToken.None);
-      Console.WriteLine($"Backup set {result.BackupSetId} verified: {result.FileCount} files, {result.UserCount} users.");
-      if (result.RollbackDirectory is not null)
-        Console.WriteLine($"Restore applied. Previous database files were retained in {result.RollbackDirectory}.");
+      var import = ActivatorUtilities.CreateInstance<LegacySqliteImport>(scope.ServiceProvider);
+      var copied = await import.ImportAsync(catalogPath, usersPath, CancellationToken.None);
+      foreach (var (table, rows) in copied.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        Console.WriteLine($"{table}: {rows}");
+      Console.WriteLine("Import completed. Search tables are rebuilt when PhotoDrive starts.");
       return true;
     }
 
     return false;
+  }
+
+  private static async Task MigrateAsync(WebApplication app)
+  {
+    await using var scope = app.Services.CreateAsyncScope();
+    var users = scope.ServiceProvider.GetRequiredService<UsersDbContext>();
+    var catalog = scope.ServiceProvider.GetRequiredService<MediaCatalogDbContext>();
+    Console.WriteLine("Applying Users database migrations.");
+    await users.Database.MigrateAsync();
+    Console.WriteLine("Applying Media catalog migrations.");
+    await catalog.Database.MigrateAsync();
+    Console.WriteLine("Database migrations completed.");
   }
 
   private static string? ReadOption(string[] args, string option)
@@ -291,11 +317,9 @@ public class Program
       var dbContext = scope.ServiceProvider.GetRequiredService<UsersDbContext>();
       app.Logger.LogInformation("Applying users module migrations.");
       await dbContext.Database.MigrateAsync();
-      await dbContext.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
     }
 
-    // FTS5 is rebuildable provider-specific infrastructure rather than an EF-modeled product table.
-    // Validate/create it in every environment after operators have applied relational migrations.
+    // Derived search tables are not EF-modeled; create or rebuild them after migrations have been applied.
     await mediaCatalogInitializer.EnsureDerivedSchemaAsync();
 
     var usersDataSeeder = scope.ServiceProvider.GetRequiredService<UsersDataSeeder>();

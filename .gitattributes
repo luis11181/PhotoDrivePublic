@@ -1,0 +1,3 @@
+# Container entrypoints must work when checked out with Windows autocrlf.
+*.sh text eol=lf
+/photodrive text eol=lf

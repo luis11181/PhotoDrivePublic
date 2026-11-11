@@ -1,4 +1,5 @@
 using CSSApps.Shared.Contracts.Primitives;
+using CSSApps.Shared.Infrastructure.Data.Turso;
 using MediaExplorer.Media.Application;
 using MediaExplorer.Media.Contracts;
 using Microsoft.Extensions.Configuration;
@@ -11,33 +12,33 @@ namespace MediaExplorer.Media.Infrastructure;
 /// <summary>Runs explicit developer-requested storage diagnostics; it is never scheduled automatically.</summary>
 public sealed class MediaMaintenanceService(IServiceProvider serviceProvider, ILogger<MediaMaintenanceService> logger) : IMediaMaintenanceService
 {
-    public Task<Result<DeveloperBackupStatusRes>> GetBackupStatusAsync(CancellationToken cancellationToken)
+    public async Task<Result<DeveloperBackupStatusRes>> GetBackupStatusAsync(CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-        var freshnessWindowHours = DailyCatalogBackupHostedService.ParseIntervalHours(
-            configuration["MediaStorage:Backups:IntervalHours"],
-            fallback: 12);
-        var status = serviceProvider
-            .GetRequiredService<CatalogBackupCheckpoint>()
-            .GetStatus(TimeSpan.FromHours(freshnessWindowHours));
-        return Task.FromResult<Result<DeveloperBackupStatusRes>>(new DeveloperBackupStatusRes
+        var interval = DatabaseBackupHostedService.BackupInterval(configuration);
+        var settings = await serviceProvider.GetRequiredService<ClusterCoordinator>().GetSettingsAsync(cancellationToken);
+        var lastVerified = ToOffset(settings.LastBackupVerifiedAt);
+        var age = lastVerified is null ? (TimeSpan?)null : DateTimeOffset.UtcNow - lastVerified.Value;
+        return new DeveloperBackupStatusRes
         {
-            LastRemoteVerifiedAt = status.LastRemoteVerifiedAt,
-            AgeHours = status.Age?.TotalHours,
-            FreshnessWindowHours = freshnessWindowHours,
-            State = status.LastRemoteVerifiedAt is null ? "missing" : status.IsFresh ? "current" : "stale"
-        });
+            LastRemoteVerifiedAt = lastVerified,
+            AgeHours = age?.TotalHours,
+            FreshnessWindowHours = (int)interval.TotalHours,
+            State = age is null ? "missing" : age < interval + TimeSpan.FromDays(1) ? "current" : "stale"
+        };
     }
 
     public async Task<Result<DeveloperOperationalHealthRes>> GetOperationalHealthAsync(CancellationToken cancellationToken)
     {
         var configuration = serviceProvider.GetRequiredService<IConfiguration>();
         var dbContext = serviceProvider.GetRequiredService<MediaCatalogDbContext>();
-        var checkpoint = serviceProvider.GetRequiredService<CatalogBackupCheckpoint>();
-        var backupWindowHours = DailyCatalogBackupHostedService.ParseIntervalHours(configuration["MediaStorage:Backups:IntervalHours"], 12);
-        var backup = checkpoint.GetStatus(TimeSpan.FromHours(backupWindowHours));
-        var backupFailure = checkpoint.GetFailureStatus();
+        var cluster = serviceProvider.GetRequiredService<ClusterCoordinator>();
+        var database = serviceProvider.GetRequiredService<TursoDatabase>();
+        var settings = await cluster.GetSettingsAsync(cancellationToken);
+        var isPrimary = await cluster.IsPrimaryAsync(cancellationToken);
+        var sync = await database.GetStatusAsync(cancellationToken);
+        var backupFresh = settings.LastBackupVerifiedAt is { } verifiedAt
+            && DateTime.UtcNow - verifiedAt < DatabaseBackupHostedService.BackupInterval(configuration) + TimeSpan.FromDays(1);
         var now = DateTime.UtcNow;
         var staleUploadHours = Math.Clamp(configuration.GetValue("MediaStorage:Health:StaleUploadHours", 24), 1, 168);
         var uploadStaleBefore = now.AddHours(-staleUploadHours);
@@ -61,8 +62,11 @@ public sealed class MediaMaintenanceService(IServiceProvider serviceProvider, IL
             && cache.OriginalCacheBytes >= cache.OriginalCacheMaxBytes * 9 / 10;
 
         var issues = new List<DeveloperMaintenanceIssueRes>();
-        if (backupFailure.ConsecutiveFailureCount > 0) issues.Add(Issue("error", "backup_failed", "The latest verified-backup attempt failed. Review the correlated server logs and run a verified backup."));
-        else if (!backup.IsFresh) issues.Add(Issue("error", "backup_stale", "No remotely verified backup is current within the configured backup window."));
+        if (settings.BackupConsecutiveFailures > 0) issues.Add(Issue("error", "backup_failed", "The latest database backup attempt failed. Review the primary host's logs and run a verified backup."));
+        else if (!backupFresh) issues.Add(Issue("error", "backup_stale", "No remotely verified database backup is current within the configured backup interval."));
+        if (sync.UnpushedLocalChanges > 0) issues.Add(Issue("error", "replica_local_writes", "This host's local database replica contains changes that were never saved to the cloud. Delete the replica file while PhotoDrive is stopped so it is downloaded again."));
+        if (sync.ConsecutivePullFailures > 0) issues.Add(Issue("error", "replica_pull_failed", "This host could not refresh its local database copy from the cloud; pages may show stale data."));
+        if (sync.LastCloudFailureAt is { } cloudFailure && DateTimeOffset.UtcNow - cloudFailure < TimeSpan.FromHours(1)) issues.Add(Issue("warning", "cloud_database_unreachable", "A save failed in the last hour because the cloud database could not be reached."));
         if (staleUploads > 0) issues.Add(Issue("warning", "stale_upload_queue", $"{staleUploads} upload sessions have remained pending for more than {staleUploadHours} hours."));
         if (staleMetadata > 0) issues.Add(Issue("warning", "stale_metadata_queue", $"{staleMetadata} metadata items have exceeded the worker lease."));
         if (failedMetadata > 0) issues.Add(Issue("warning", "metadata_failed", $"{failedMetadata} metadata items are failed and can be retried."));
@@ -75,9 +79,12 @@ public sealed class MediaMaintenanceService(IServiceProvider serviceProvider, IL
         {
             CheckedAt = now,
             State = issues.Count == 0 ? "healthy" : "attention",
-            LastRemoteVerifiedBackupAt = backup.LastRemoteVerifiedAt,
-            LastBackupFailureAt = backupFailure.LastFailureAt,
-            ConsecutiveBackupFailureCount = backupFailure.ConsecutiveFailureCount,
+            LastRemoteVerifiedBackupAt = ToOffset(settings.LastBackupVerifiedAt),
+            LastBackupFailureAt = ToOffset(settings.LastBackupFailedAt),
+            ConsecutiveBackupFailureCount = settings.BackupConsecutiveFailures,
+            IsPrimaryHost = isPrimary,
+            DatabaseLastPullAt = sync.LastPullAt,
+            DatabaseLastCloudFailureAt = sync.LastCloudFailureAt,
             PendingUploadCount = pendingUploads,
             StaleUploadCount = staleUploads,
             PendingMetadataCount = pendingMetadata,
@@ -147,20 +154,12 @@ public sealed class MediaMaintenanceService(IServiceProvider serviceProvider, IL
     public async Task<Result<DeveloperBackupReportRes>> BackupAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("[media.maintenance] developer verified backup started");
-        var backupPipeline = serviceProvider.GetRequiredService<CatalogBackupPipeline>();
-        var backup = await backupPipeline.RunAsync(cancellationToken);
-        var snapshot = backup.LocalBackup;
-        var usersSnapshot = backup.UsersBackup;
-        var remoteBackup = backup.RemoteBackup;
+        var backup = await serviceProvider.GetRequiredService<DatabaseBackupService>().RunAsync(cancellationToken);
+        var snapshot = backup.Local;
         var issues = new List<DeveloperMaintenanceIssueRes>();
-        if (backup.RemoteBackupFailure is not null)
+        if (backup.RemoteFailure is not null)
         {
-            issues.Add(new DeveloperMaintenanceIssueRes
-            {
-                Severity = "error",
-                Code = "remote_catalog_backup_failed",
-                Message = "The local catalog backup was verified, but remote backup upload or verification failed. Check the correlated server logs."
-            });
+            issues.Add(Issue("error", "remote_database_backup_failed", "The local database snapshot was verified, but remote backup upload or verification failed. Check the correlated server logs."));
         }
         var response = new DeveloperBackupReportRes
         {
@@ -171,15 +170,14 @@ public sealed class MediaMaintenanceService(IServiceProvider serviceProvider, IL
             BlobCount = snapshot.BlobCount,
             FileVersionCount = snapshot.FileVersionCount,
             FileVersionMetadataCount = snapshot.FileVersionMetadataCount,
-            UserCount = usersSnapshot.UserCount,
-            RoleCount = usersSnapshot.RoleCount,
-            PermissionCount = usersSnapshot.PermissionCount,
-            UserSessionCount = usersSnapshot.UserSessionCount,
-            UserTokenCount = usersSnapshot.UserTokenCount,
-            RemoteBackupSetId = remoteBackup?.BackupSetId,
-            RemoteBackupArtifactCount = remoteBackup?.ArtifactCount ?? 0,
-            RemoteBackupBytes = remoteBackup?.UploadedBytes ?? 0,
-            RemoteBackupVerified = remoteBackup?.Verified ?? false,
+            UserCount = snapshot.UserCount,
+            RoleCount = snapshot.RoleCount,
+            UserSessionCount = snapshot.UserSessionCount,
+            UserTokenCount = snapshot.UserTokenCount,
+            RemoteBackupSetId = backup.Remote?.BackupSetId,
+            RemoteBackupArtifactCount = backup.Remote?.ArtifactCount ?? 0,
+            RemoteBackupBytes = backup.Remote?.UploadedBytes ?? 0,
+            RemoteBackupVerified = backup.Remote is not null,
             Issues = issues
         };
         logger.LogInformation("[media.maintenance] developer verified backup completed remoteVerified={RemoteVerified}", response.RemoteBackupVerified);
@@ -192,15 +190,51 @@ public sealed class MediaMaintenanceService(IServiceProvider serviceProvider, IL
         var validation = await reconciliation.ValidateCleanupSelectionAsync(request, cancellationToken);
         if (validation.IsFailure) return validation.ErrorValue;
         logger.LogInformation("[media.maintenance] production-safe cleanup backup started selectedCount={SelectedCount}", request.CandidateIds?.Count ?? 0);
-        var backupPipeline = serviceProvider.GetRequiredService<CatalogBackupPipeline>();
-        var backup = await backupPipeline.RunAsync(cancellationToken);
-        if (backup.RemoteBackupFailure is not null || backup.RemoteBackup?.Verified != true)
+        var backup = await serviceProvider.GetRequiredService<DatabaseBackupService>().RunAsync(cancellationToken);
+        if (backup.Remote is null)
         {
             logger.LogWarning("[media.maintenance] selected cleanup blocked because safety backup was not remotely verified");
             return MediaErrors.Conflict("Selected cleanup was blocked because a new verified remote backup could not be completed.");
         }
-        return await reconciliation.CleanupAsync(request, backup.RemoteBackup.BackupSetId, cancellationToken);
+        return await reconciliation.CleanupAsync(request, backup.Remote.BackupSetId, cancellationToken);
     }
+
+    public async Task<Result<ClusterHostsRes>> GetHostsAsync(CancellationToken cancellationToken)
+    {
+        var cluster = serviceProvider.GetRequiredService<ClusterCoordinator>();
+        await cluster.HeartbeatAsync(cancellationToken);
+        var settings = await cluster.GetSettingsAsync(cancellationToken);
+        var hosts = await cluster.ListHostsAsync(cancellationToken);
+        var onlineSince = DateTime.UtcNow - 3 * HostHeartbeatHostedService.Interval;
+        return new ClusterHostsRes
+        {
+            CurrentHostId = cluster.Host.Id,
+            PrimaryHostId = settings.PrimaryHostId,
+            PrimaryChangedAt = settings.PrimaryChangedAt,
+            Hosts = hosts.Select(host => new ClusterHostRes
+            {
+                Id = host.Id,
+                Name = host.Name,
+                FirstSeenAt = host.FirstSeenAt,
+                LastSeenAt = host.LastSeenAt,
+                Online = host.LastSeenAt >= onlineSince,
+                IsCurrent = host.Id == cluster.Host.Id,
+                IsPrimary = host.Id == settings.PrimaryHostId
+            }).ToList()
+        };
+    }
+
+    public async Task<Result<ClusterHostsRes>> SetPrimaryHostAsync(Guid userId, SetPrimaryHostReq request, CancellationToken cancellationToken)
+    {
+        var cluster = serviceProvider.GetRequiredService<ClusterCoordinator>();
+        if (!await cluster.SetPrimaryAsync(request.HostId, userId, cancellationToken))
+            return MediaErrors.NotFound("The selected host has never connected to this installation.");
+        logger.LogInformation("[cluster] primary host changed");
+        return await GetHostsAsync(cancellationToken);
+    }
+
+    private static DateTimeOffset? ToOffset(DateTime? value) =>
+        value is null ? null : new DateTimeOffset(DateTime.SpecifyKind(value.Value, DateTimeKind.Utc));
 
     private static List<DeveloperMaintenanceIssueRes> MapIssues(IEnumerable<StorageReconciliationIssue> issues) =>
         issues.Select(issue => new DeveloperMaintenanceIssueRes
@@ -209,5 +243,4 @@ public sealed class MediaMaintenanceService(IServiceProvider serviceProvider, IL
             Code = issue.Code,
             Message = issue.Message
         }).ToList();
-
 }

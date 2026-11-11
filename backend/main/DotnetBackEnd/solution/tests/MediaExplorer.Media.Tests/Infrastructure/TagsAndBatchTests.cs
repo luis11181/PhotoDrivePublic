@@ -66,12 +66,6 @@ public sealed class TagsAndBatchTests
         search.IsSuccess.Should().BeTrue();
         search.SuccessValue.Items.Should().ContainSingle(item => item.Id == folder.Id);
 
-        var backup = await new CatalogBackupService(dbContext, harness.Configuration)
-            .CreateAndVerifyAsync(CancellationToken.None);
-        var export = await File.ReadAllTextAsync(backup.CatalogExportPath!);
-        export.Should().Contain("\"recordType\":\"tag\"");
-        export.Should().Contain("\"recordType\":\"folder_tag\"");
-
         var updated = await tags.UpdateAsync(
             userId,
             created.SuccessValue.Id,

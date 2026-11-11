@@ -39,7 +39,7 @@ jobs:
       - run: dotnet restore tests/MediaExplorer.Media.Tests/MediaExplorer.Media.Tests.csproj
       - run: dotnet test tests/MediaExplorer.Media.Tests/MediaExplorer.Media.Tests.csproj --no-restore --disable-build-servers --maxcpucount:1
       - run: dotnet build src/Hosts/CSSApps.Api/CSSApps.Api.csproj --no-restore --disable-build-servers --maxcpucount:1
-      - run: ../../../../scripts/verify-fresh-sqlite-migrations.sh
+      - run: ../../../../scripts/verify-fresh-migrations.sh
 
   container:
     runs-on: ubuntu-latest

@@ -7,6 +7,7 @@ export const english = {
   "preferences.lightTheme": "Use light theme",
   "preferences.darkTheme": "Use dark theme",
   "sidebar.library": "Library",
+  "sidebar.storage": "Storage",
   "sidebar.photos": "Photos",
   "sidebar.albums": "Albums",
   "sidebar.files": "Files",
@@ -14,7 +15,8 @@ export const english = {
   "sidebar.quickAccess": "Quick access",
   "sidebar.shared": "Shared with me",
   "sidebar.trash": "Trash",
-  "sidebar.imports": "Imports",
+  "sidebar.imports": "Import from server",
+  "sidebar.administration": "Administration",
   "sidebar.familyAccounts": "Family accounts",
   "sidebar.developerTools": "Developer tools",
   "sidebar.sourceLicense": "Source & license",
@@ -128,6 +130,9 @@ export const english = {
   "library.allYears": "All years",
   "library.showFavoritesOnly": "Show favorites only",
   "library.reset": "Reset",
+  "library.filtersAndSort": "Filters & sort",
+  "library.clearFilters": "Clear search and filters",
+  "library.tryAgain": "Try again",
   "library.folders": "Folders",
   "library.documents": "Documents",
   "library.spreadsheets": "Spreadsheets",
@@ -311,10 +316,10 @@ export const english = {
   "captureDate.restore": "Restore detected date",
   "captureDate.required": "Choose a date to apply the correction.",
   "captureDate.saveFailed": "Could not update capture dates",
-  "imports.eyebrow": "Library tools",
-  "imports.title": "Imports",
+  "imports.eyebrow": "Administration",
+  "imports.title": "Import from server",
   "imports.intro":
-    "Bring an extracted Google Photos Takeout into a folder you choose.",
+    "Import an extracted Google Photos Takeout from this server into your library. Owners can start imports from any device.",
   "imports.backPhotos": "Back",
   "imports.actionFailed": "The action failed",
   "imports.started": "Import started: {count} items will go to {destination}.",
@@ -328,11 +333,20 @@ export const english = {
   "imports.retryQueued": "Failed items were queued again.",
   "imports.empty": "No imports yet.",
   "imports.takeout": "Google Photos Takeout",
+  "imports.settings": "Destination & options",
   "imports.takeoutHelp":
-    "Extract the Takeout first, then enter the directory that contains its photos and sidecars.",
-  "imports.sourceDirectory": "Source directory on this server",
+    "Extract the Takeout into the server import folder, then choose the folder containing its photos and sidecars.",
+  "imports.sourceDirectory": "Choose a server folder",
   "imports.sourceHelp":
-    "Any directory readable by the backend is accepted. Use a filesystem path, not a file:// URL.",
+    "These folders are on the server, inside its configured import folder (Downloads by default). Source files stay unchanged.",
+  "imports.ownerHelp": "Only owners can import files from the server. Use Upload to add files from your own device.",
+  "imports.sourceRoot": "Server import folder",
+  "imports.parentFolder": "Up",
+  "imports.chooseFolder": "Use this folder",
+  "imports.selectedSource": "Selected source:",
+  "imports.noSourceFolders": "No subfolders here. You can select this folder or place an extracted Takeout in the server import folder.",
+  "imports.moreFolders": "More folders",
+  "imports.sourceUnavailable": "The server import folder is unavailable. Check the configured source directory and its read permissions, then refresh.",
   "imports.destination": "Import into",
   "imports.loadingFolders": "Loading folders…",
   "imports.noFolders": "No active folders available",
@@ -360,7 +374,7 @@ export const english = {
     "Uses SHA-256 within your library, regardless of the file name or folder.",
   "imports.start": "Scan and start import",
   "imports.privacy":
-    "Duplicate checks stay within your library. Missing or malformed sidecars do not prevent importing the original. Symlink entries beneath the selected directory are rejected.",
+    "Your source files stay unchanged. Duplicate checks only use your library. Missing or unreadable extra metadata does not prevent importing the original.",
   "imports.destinationLabel": "Destination",
   "imports.progress": "{progress}% complete",
   "imports.discovered": "Discovered",
@@ -375,6 +389,12 @@ export const english = {
   "imports.sidecarSummary":
     "{sidecars} sidecars had no matching media file · {json} other JSON records were ignored",
   "imports.retryFailed": "Retry failed items",
+  "imports.remove": "Remove from list",
+  "imports.removeConfirm":
+    "Remove this import from the list? Files it already imported stay in your library.",
+  "imports.removeConfirmFailed":
+    "Remove this import from the list? Files it already imported stay in your library, but its {count} failed items can no longer be retried.",
+  "imports.removed": "The import was removed from the list.",
   "imports.detailsFailed": "Could not load these import details.",
   "imports.loadMore": "Load more",
   "imports.noMatches": "No matching items.",
@@ -444,7 +464,7 @@ export const english = {
   "developer.healthStateNeutral": "Not checked",
   "developer.healthBackup": "Recovery backup",
   "developer.healthBackupCurrent":
-    "The latest remote backup is current and was restore-, integrity-, and reference-checked.",
+    "The latest remote backup is current and passed integrity, reference, and checksum checks.",
   "developer.healthBackupAttention":
     "No current remotely verified recovery point is recorded.",
   "developer.healthPreviews": "Photo and video previews",
@@ -593,13 +613,13 @@ export const english = {
   "maintenance.check": "Check storage integrity",
   "maintenance.backupTitle": "2. Create a verified recovery backup",
   "maintenance.backupWhen":
-    "you want a recovery point now, especially before upgrades, repairs, or storage cleanup. A verified backup also runs automatically each day.",
+    "you want a recovery point now, especially before upgrades, repairs, or storage cleanup. A verified backup also runs automatically each week.",
   "maintenance.whatItSaves": "What it saves:",
   "maintenance.backupSaves":
-    "consistent SQLite snapshots and portable recovery exports for the media catalog and family accounts. Original media bytes are not copied into this backup because private S3 is already their source of truth.",
+    "one consistent snapshot of the shared database, covering the media catalog and family accounts, as a standard SQLite file. Original media bytes are not copied into this backup because private S3 is already their source of truth.",
   "maintenance.verification": "Verification:",
   "maintenance.backupVerification":
-    "the server restores and checks the snapshots, uploads the complete set to the dedicated backup bucket, and verifies the remote artifacts. It does not modify media or caches.",
+    "the server checks the snapshot's integrity, references, and counts, uploads it with a checksum manifest to the dedicated backup bucket, and verifies the remote copy. It does not modify media or caches.",
   "maintenance.creating": "Creating and verifying…",
   "maintenance.create": "Create verified backup now",
   "maintenance.auditReport": "Storage audit report",
@@ -680,13 +700,14 @@ export const english = {
     "Albums collect photos and videos without moving them or making another copy.",
   "albums.new": "New album",
   "albums.addPhotos": "Add photos",
+  "albums.upload": "Upload photos",
+  "albums.uploadQueueFailed": "Could not queue the album uploads.",
   "albums.edit": "Edit",
   "albums.share": "Share",
   "albums.delete": "Delete",
   "albums.sharedNamed":
-    "Shared with you by {name}. Membership changes immediately when the owner updates the album.",
-  "albums.shared":
-    "Shared with you. Membership changes immediately when the owner updates the album.",
+    "Shared with you by {name}. Album changes appear immediately.",
+  "albums.shared": "Shared with you. Album changes appear immediately.",
   "albums.collections": "Your collections",
   "albums.count": "{count} albums",
   "albums.loading": "Loading albums",
@@ -714,9 +735,9 @@ export const english = {
   "albums.operationFailed": "The operation failed.",
   "albums.batchAdded": "{count} added · {unchanged} already in this album.",
   "albums.batchRemoved": "{count} removed · {unchanged} already absent.",
-  "albums.removed": "removed from the album; the files remain in your library",
+  "albums.removed": "removed from the album; the original files are kept",
   "albums.deleteConfirm":
-    "Delete “{name}”? Its files will stay in your library.",
+    "Delete “{name}”? Its files will stay in their owners’ libraries.",
   "albums.deleteFailed": "Could not delete the album",
   "albums.favoriteFailed": "Could not update the favorite",
   "albums.addedFavorites": "added to favorites",
@@ -732,19 +753,25 @@ export const english = {
   "albums.save": "Save album",
   "albums.shareTitle": "Share “{name}”",
   "albums.shareHelp":
-    "Viewer access follows this album’s current members. Files stay in your library and are never copied.",
+    "Access follows this album’s current items. Files stay in their owners’ libraries and are never copied.",
   "albums.privateSharing": "Private family sharing",
   "albums.privateSharingHelp":
-    "Viewers can see and download current album items, but cannot edit the album or share it with someone else. Removing access takes effect immediately.",
+    "Viewers can see and download items. Collaborators can also add their own photos and remove any item from the album without deleting the original. Only the owner manages album details and access.",
   "albums.familyMember": "Family member",
   "albums.choosePerson": "Choose a person",
   "albums.shareViewer": "Share as viewer",
+  "albums.shareCollaborator": "Share as collaborator",
+  "albums.accessRole": "Access",
+  "albums.accessFor": "Access for {name}",
+  "albums.collaborator": "Collaborator",
+  "albums.collaboratorHelp":
+    "You can add your own photos and remove any item from this album. Removing an item keeps the original in its owner’s library. Contributions are visible to everyone with album access.",
   "albums.peopleAccess": "People with access",
-  "albums.peopleAccessCount": "Access · {count} viewers",
+  "albums.peopleAccessCount": "Access · {count} people",
   "albums.loadingAccess": "Loading access…",
   "albums.you": "You",
   "albums.owner": "Owner",
-  "albums.ownerHelp": "Can edit photos, album details, and access",
+  "albums.ownerHelp": "Can manage album items, details, and access",
   "albums.viewer": "Viewer",
   "albums.removeAccess": "Remove {name}'s access",
   "albums.revokeConfirm":
@@ -949,7 +976,8 @@ export const english = {
   "events.endBeforeStart": "The end date cannot be before the start date.",
   "events.saveFailed": "Could not save the event.",
   "events.deleteFailed": "Could not delete the event.",
-  "events.deleteWarning": "Deleting this event will not change or delete any photos.",
+  "events.deleteWarning":
+    "Deleting this event will not change or delete any photos.",
   "events.confirmDelete": "Delete event",
   "events.delete": "Delete",
   "events.created": "Event created",
@@ -968,6 +996,12 @@ export const english = {
   "media.protectedFolder": "Protected system folder",
   "media.availability": "{state} availability",
   "upload.uploadPhotos": "Upload photos and videos",
+  "upload.albumTitle": "Upload to “{name}”",
+  "upload.albumHelp":
+    "Photos and videos will be saved to your Photos library and added to this album. Everyone with album access can see them. No extra copy is made.",
+  "upload.queueAlbum": "Album: {name}",
+  "upload.queueAlbumFailed":
+    "The upload is saved in your library, but could not be added to the album. Retry to add it without uploading again, or dismiss this entry to keep it only in your library.",
   "upload.uploadFiles": "Upload files",
   "upload.photosExplanation":
     "Images and videos are stored in Media and included in your Photos timeline.",
@@ -1042,6 +1076,7 @@ const spanish: Record<TranslationKey, string> = {
   "preferences.lightTheme": "Usar tema claro",
   "preferences.darkTheme": "Usar tema oscuro",
   "sidebar.library": "Biblioteca",
+  "sidebar.storage": "Almacenamiento",
   "sidebar.photos": "Fotos",
   "sidebar.albums": "Álbumes",
   "sidebar.files": "Archivos",
@@ -1049,7 +1084,8 @@ const spanish: Record<TranslationKey, string> = {
   "sidebar.quickAccess": "Acceso rápido",
   "sidebar.shared": "Compartido conmigo",
   "sidebar.trash": "Papelera",
-  "sidebar.imports": "Importaciones",
+  "sidebar.imports": "Importar desde el servidor",
+  "sidebar.administration": "Administración",
   "sidebar.familyAccounts": "Cuentas familiares",
   "sidebar.developerTools": "Herramientas de desarrollo",
   "sidebar.sourceLicense": "Código y licencia",
@@ -1171,6 +1207,9 @@ const spanish: Record<TranslationKey, string> = {
   "library.allYears": "Todos los años",
   "library.showFavoritesOnly": "Mostrar solo favoritos",
   "library.reset": "Restablecer",
+  "library.filtersAndSort": "Filtros y orden",
+  "library.clearFilters": "Limpiar búsqueda y filtros",
+  "library.tryAgain": "Intentar de nuevo",
   "library.folders": "Carpetas",
   "library.documents": "Documentos",
   "library.spreadsheets": "Hojas de cálculo",
@@ -1278,8 +1317,7 @@ const spanish: Record<TranslationKey, string> = {
     "¿Descargar las carpetas y archivos seleccionados?",
   "downloadConfirm.checking": "Calculando el tamaño de la descarga…",
   "downloadConfirm.summaryOne": "1 archivo · {size} de datos originales",
-  "downloadConfirm.summary":
-    "{count} archivos · {size} de datos originales",
+  "downloadConfirm.summary": "{count} archivos · {size} de datos originales",
   "downloadConfirm.empty": "Este ZIP contiene carpetas, pero no archivos.",
   "downloadConfirm.help":
     "El ZIP se crea durante la descarga y no se conserva en el servidor.",
@@ -1358,10 +1396,10 @@ const spanish: Record<TranslationKey, string> = {
   "captureDate.restore": "Restaurar fecha detectada",
   "captureDate.required": "Elige una fecha para aplicar la corrección.",
   "captureDate.saveFailed": "No se pudieron actualizar las fechas de captura",
-  "imports.eyebrow": "Herramientas de la biblioteca",
-  "imports.title": "Importaciones",
+  "imports.eyebrow": "Administración",
+  "imports.title": "Importar desde el servidor",
   "imports.intro":
-    "Importa un Google Fotos Takeout extraído en la carpeta que elijas.",
+    "Importa un Google Fotos Takeout extraído en este servidor a tu biblioteca. Los propietarios pueden iniciar importaciones desde cualquier dispositivo.",
   "imports.backPhotos": "Volver",
   "imports.actionFailed": "La acción falló",
   "imports.started":
@@ -1376,11 +1414,20 @@ const spanish: Record<TranslationKey, string> = {
   "imports.retryQueued": "Los elementos fallidos volvieron a la cola.",
   "imports.empty": "Aún no hay importaciones.",
   "imports.takeout": "Google Fotos Takeout",
+  "imports.settings": "Destino y opciones",
   "imports.takeoutHelp":
-    "Extrae primero el Takeout y luego indica la carpeta que contiene sus fotos y archivos complementarios.",
-  "imports.sourceDirectory": "Carpeta de origen en este servidor",
+    "Extrae el Takeout en la carpeta de importación del servidor y elige la carpeta con sus fotos y archivos complementarios.",
+  "imports.sourceDirectory": "Elegir carpeta del servidor",
   "imports.sourceHelp":
-    "Se acepta cualquier carpeta que el backend pueda leer. Usa una ruta del sistema de archivos, no una URL file://.",
+    "Estas carpetas están en el servidor, dentro de su carpeta de importación configurada (Descargas por defecto). Los archivos de origen no se modifican.",
+  "imports.ownerHelp": "Solo los propietarios pueden importar archivos del servidor. Usa Subir para añadir archivos desde tu propio dispositivo.",
+  "imports.sourceRoot": "Carpeta de importación del servidor",
+  "imports.parentFolder": "Subir un nivel",
+  "imports.chooseFolder": "Usar esta carpeta",
+  "imports.selectedSource": "Origen seleccionado:",
+  "imports.noSourceFolders": "No hay subcarpetas. Puedes seleccionar esta carpeta o colocar un Takeout extraído en la carpeta de importación del servidor.",
+  "imports.moreFolders": "Más carpetas",
+  "imports.sourceUnavailable": "La carpeta de importación del servidor no está disponible. Revisa el origen configurado y sus permisos de lectura y actualiza.",
   "imports.destination": "Importar en",
   "imports.loadingFolders": "Cargando carpetas…",
   "imports.noFolders": "No hay carpetas activas disponibles",
@@ -1399,8 +1446,7 @@ const spanish: Record<TranslationKey, string> = {
     "Cuando otro archivo tenga el mismo nombre en esa carpeta",
   "imports.skipRecommended": "Omitirlo (recomendado)",
   "imports.keepBoth": "Conservar ambos con el mismo nombre",
-  "imports.skipOptions":
-    "Omitir archivos ya representados en tu biblioteca",
+  "imports.skipOptions": "Omitir archivos ya representados en tu biblioteca",
   "imports.skipSameName": "Omitir archivos con el mismo nombre",
   "imports.skipSameNameHelp":
     "Comprueba los archivos activos en la carpeta de destino seleccionada.",
@@ -1409,7 +1455,7 @@ const spanish: Record<TranslationKey, string> = {
     "Usa SHA-256 dentro de tu biblioteca, sin importar el nombre o la carpeta.",
   "imports.start": "Analizar e iniciar importación",
   "imports.privacy":
-    "La búsqueda de duplicados se limita a tu biblioteca. Los archivos complementarios ausentes o dañados no impiden importar el original. Se rechazan los enlaces simbólicos dentro de la carpeta elegida.",
+    "Tus archivos de origen no se modifican. La búsqueda de duplicados se limita a tu biblioteca. Los metadatos adicionales ausentes o ilegibles no impiden importar el original.",
   "imports.destinationLabel": "Destino",
   "imports.progress": "{progress}% completado",
   "imports.discovered": "Descubiertos",
@@ -1424,6 +1470,12 @@ const spanish: Record<TranslationKey, string> = {
   "imports.sidecarSummary":
     "{sidecars} archivos complementarios no tenían un archivo multimedia correspondiente · se ignoraron {json} registros JSON",
   "imports.retryFailed": "Reintentar elementos fallidos",
+  "imports.remove": "Quitar de la lista",
+  "imports.removeConfirm":
+    "¿Quitar esta importación de la lista? Los archivos que ya importó se quedan en tu biblioteca.",
+  "imports.removeConfirmFailed":
+    "¿Quitar esta importación de la lista? Los archivos que ya importó se quedan en tu biblioteca, pero sus {count} elementos fallidos ya no se podrán reintentar.",
+  "imports.removed": "La importación se quitó de la lista.",
   "imports.detailsFailed": "No se pudieron cargar estos detalles.",
   "imports.loadMore": "Cargar más",
   "imports.noMatches": "No hay elementos coincidentes.",
@@ -1495,7 +1547,7 @@ const spanish: Record<TranslationKey, string> = {
   "developer.healthStateNeutral": "Sin comprobar",
   "developer.healthBackup": "Copia de recuperación",
   "developer.healthBackupCurrent":
-    "La copia remota más reciente está actualizada y pasó comprobaciones de restauración, integridad y referencias.",
+    "La copia remota más reciente está actualizada y pasó comprobaciones de integridad, referencias y sumas de verificación.",
   "developer.healthBackupAttention":
     "No hay registrado un punto de recuperación remoto verificado y actualizado.",
   "developer.healthPreviews": "Vistas previas de fotos y videos",
@@ -1646,13 +1698,13 @@ const spanish: Record<TranslationKey, string> = {
   "maintenance.check": "Comprobar integridad",
   "maintenance.backupTitle": "2. Crear una copia de recuperación verificada",
   "maintenance.backupWhen":
-    "quieres un punto de recuperación ahora, especialmente antes de actualizaciones, reparaciones o limpiezas. También se ejecuta una copia verificada cada día.",
+    "quieres un punto de recuperación ahora, especialmente antes de actualizaciones, reparaciones o limpiezas. También se ejecuta una copia verificada cada semana.",
   "maintenance.whatItSaves": "Qué guarda:",
   "maintenance.backupSaves":
-    "instantáneas coherentes de SQLite y exportaciones portátiles del catálogo y las cuentas familiares. Los bytes multimedia no se copian porque el S3 privado ya es su fuente de verdad.",
+    "una instantánea coherente de la base de datos compartida, con el catálogo y las cuentas familiares, como un archivo SQLite estándar. Los bytes multimedia no se copian porque el S3 privado ya es su fuente de verdad.",
   "maintenance.verification": "Verificación:",
   "maintenance.backupVerification":
-    "el servidor restaura y comprueba las instantáneas, sube el conjunto completo al bucket de copias y verifica los artefactos remotos. No modifica archivos ni cachés.",
+    "el servidor comprueba la integridad, las referencias y los recuentos de la instantánea, la sube con un manifiesto de sumas de verificación al bucket de copias y verifica la copia remota. No modifica archivos ni cachés.",
   "maintenance.creating": "Creando y verificando…",
   "maintenance.create": "Crear copia verificada ahora",
   "maintenance.auditReport": "Informe de almacenamiento",
@@ -1736,13 +1788,16 @@ const spanish: Record<TranslationKey, string> = {
     "Los álbumes reúnen fotos y videos sin moverlos ni crear otra copia.",
   "albums.new": "Nuevo álbum",
   "albums.addPhotos": "Añadir fotos",
+  "albums.upload": "Subir fotos",
+  "albums.uploadQueueFailed":
+    "No se pudieron poner en cola las subidas al álbum.",
   "albums.edit": "Editar",
   "albums.share": "Compartir",
   "albums.delete": "Eliminar",
   "albums.sharedNamed":
-    "{name} compartió este álbum contigo. Los miembros cambian inmediatamente cuando el propietario actualiza el álbum.",
+    "{name} compartió este álbum contigo. Los cambios aparecen de inmediato.",
   "albums.shared":
-    "Este álbum está compartido contigo. Los miembros cambian inmediatamente cuando el propietario lo actualiza.",
+    "Este álbum está compartido contigo. Los cambios aparecen de inmediato.",
   "albums.collections": "Tus colecciones",
   "albums.count": "{count} álbumes",
   "albums.loading": "Cargando álbumes",
@@ -1774,10 +1829,9 @@ const spanish: Record<TranslationKey, string> = {
   "albums.batchAdded":
     "{count} añadidos · {unchanged} ya estaban en este álbum.",
   "albums.batchRemoved": "{count} quitados · {unchanged} ya no estaban.",
-  "albums.removed":
-    "quitados del álbum; los archivos permanecen en tu biblioteca",
+  "albums.removed": "quitados del álbum; los archivos originales se conservan",
   "albums.deleteConfirm":
-    "¿Eliminar “{name}”? Sus archivos permanecerán en tu biblioteca.",
+    "¿Eliminar “{name}”? Sus archivos permanecerán en las bibliotecas de sus propietarios.",
   "albums.deleteFailed": "No se pudo eliminar el álbum",
   "albums.favoriteFailed": "No se pudo actualizar el favorito",
   "albums.addedFavorites": "añadidos a favoritos",
@@ -1793,19 +1847,26 @@ const spanish: Record<TranslationKey, string> = {
   "albums.save": "Guardar álbum",
   "albums.shareTitle": "Compartir “{name}”",
   "albums.shareHelp":
-    "El acceso de lectura sigue a los miembros actuales del álbum. Los archivos permanecen en tu biblioteca y nunca se copian.",
+    "El acceso sigue a los elementos actuales del álbum. Los archivos permanecen en las bibliotecas de sus propietarios y nunca se copian.",
   "albums.privateSharing": "Uso compartido privado familiar",
   "albums.privateSharingHelp":
-    "Los lectores pueden ver y descargar los elementos actuales, pero no pueden editar ni volver a compartir el álbum. Quitar el acceso se aplica de inmediato.",
+    "Los lectores pueden ver y descargar. Los colaboradores también pueden añadir sus fotos y quitar cualquier elemento del álbum sin eliminar el original. Solo el propietario administra los detalles y accesos.",
   "albums.familyMember": "Familiar",
   "albums.choosePerson": "Elegir una persona",
   "albums.shareViewer": "Compartir con acceso de lectura",
+  "albums.shareCollaborator": "Compartir como colaborador",
+  "albums.accessRole": "Acceso",
+  "albums.accessFor": "Acceso de {name}",
+  "albums.collaborator": "Colaborador",
+  "albums.collaboratorHelp":
+    "Puedes añadir tus fotos y quitar cualquier elemento de este álbum. Al quitarlo, el original permanece en la biblioteca de su propietario. Todos los que tienen acceso al álbum pueden ver tus aportes.",
   "albums.peopleAccess": "Personas con acceso",
-  "albums.peopleAccessCount": "Acceso · {count} lectores",
+  "albums.peopleAccessCount": "Acceso · {count} personas",
   "albums.loadingAccess": "Cargando accesos…",
   "albums.you": "Tú",
   "albums.owner": "Propietario",
-  "albums.ownerHelp": "Puede editar fotos, detalles y accesos",
+  "albums.ownerHelp":
+    "Puede administrar elementos, detalles y accesos del álbum",
   "albums.viewer": "Lector",
   "albums.removeAccess": "Quitar el acceso de {name}",
   "albums.revokeConfirm":
@@ -2011,10 +2072,12 @@ const spanish: Record<TranslationKey, string> = {
   "events.description": "Descripción (opcional)",
   "events.save": "Guardar evento",
   "events.required": "Escribe un título y una fecha de inicio.",
-  "events.endBeforeStart": "La fecha de finalización no puede ser anterior a la fecha de inicio.",
+  "events.endBeforeStart":
+    "La fecha de finalización no puede ser anterior a la fecha de inicio.",
   "events.saveFailed": "No se pudo guardar el evento.",
   "events.deleteFailed": "No se pudo eliminar el evento.",
-  "events.deleteWarning": "Eliminar este evento no cambiará ni eliminará ninguna foto.",
+  "events.deleteWarning":
+    "Eliminar este evento no cambiará ni eliminará ninguna foto.",
   "events.confirmDelete": "Eliminar evento",
   "events.delete": "Eliminar",
   "events.created": "Evento creado",
@@ -2033,6 +2096,12 @@ const spanish: Record<TranslationKey, string> = {
   "media.protectedFolder": "Carpeta protegida del sistema",
   "media.availability": "Disponibilidad: {state}",
   "upload.uploadPhotos": "Subir fotos y videos",
+  "upload.albumTitle": "Subir a “{name}”",
+  "upload.albumHelp":
+    "Las fotos y videos se guardarán en tu biblioteca de Fotos y se añadirán a este álbum. Todos los que tengan acceso al álbum podrán verlos. No se crea otra copia.",
+  "upload.queueAlbum": "Álbum: {name}",
+  "upload.queueAlbumFailed":
+    "La subida está guardada en tu biblioteca, pero no se pudo añadir al álbum. Reintenta para añadirla sin volver a subirla o descarta esta entrada para conservarla solo en tu biblioteca.",
   "upload.uploadFiles": "Subir archivos",
   "upload.photosExplanation":
     "Las imágenes y videos se guardan en Multimedia y se incluyen en tu cronología de Fotos.",

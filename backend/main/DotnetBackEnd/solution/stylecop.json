@@ -2,10 +2,10 @@
   "$schema": "https://raw.githubusercontent.com/DotNetAnalyzers/StyleCopAnalyzers/master/StyleCop.Analyzers/StyleCop.Analyzers/Settings/stylecop.schema.json",
   "settings": {
     "documentationRules": {
-      "companyName": "PhotoDrive contributors",
-      "copyrightText": "Copyright (c) {companyName}.",
+      "companyName": "luis cañas",
+      "copyrightText": "Copyright (c) {companyName}. All rights reserved.",
       "variables": {
-        "licenseName": "GNU AGPL-3.0-only",
+        "licenseName": "Propietary",
         "licenseFile": "LICENSE"
       },
       "headerDecoration": "-----------------------------------------------------------------------"

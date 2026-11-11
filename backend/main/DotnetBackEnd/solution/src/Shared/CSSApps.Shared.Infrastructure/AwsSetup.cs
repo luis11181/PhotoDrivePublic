@@ -30,11 +30,11 @@ public static class AWSSetup
         services.AddDefaultAWSOptions(awsConfig); // takes that configuration and creates the default aws options
 
         // Register AWS SES client
-        // Uses shared AWS configuration from appsettings.json (region, credentials, profile)
+        // Uses shared AWS configuration from infrastructure.json (region, credentials, profile)
         // Falls back to default AWS credentials chain (IAM role, environment variables, AWS CLI config)
         services.AddAWSService<IAmazonSimpleEmailServiceV2>();
         services.AddAWSService<IAmazonS3>();
-
+        
         // Register AWS clients as necessary, e.g., Amazon DynamoDB
         services.AddAWSService<IAmazonDynamoDB>();
 

@@ -7,7 +7,7 @@ namespace CSSApps.Users.Contracts.Interfaces.Auth;
 public interface ILocalAuthenticationServices
 {
     Task<Result<AuthRes>> Login(LoginReq model, string ipAddress, string userAgent);
-
+    
     Task<Result<AuthRes>> GoogleLoginOrRegister(string credential, string ipAddress, string userAgent);
 
     Task<Result<CurrentUserRes>> SetPassword(Guid userId, SetPasswordReq model);

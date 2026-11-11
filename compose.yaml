@@ -1,37 +1,19 @@
-name: photodrive
+name: photodrive-personal
 
+# Production on Linux. The shared runtime and paths are also used on Windows.
 services:
   photodrive:
-    build:
-      context: .
-    image: photodrive:local
-    env_file:
-      - .env
-    ports:
-      - "${PHOTODRIVE_PORT:-8080}:8080"
-    volumes:
-      - photodrive-data:/data
-    restart: unless-stopped
-    init: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp:size=1g,mode=1777
+    extends:
+      file: compose.runtime.yaml
+      service: photodrive
+    restart: always
+    environment:
+      ReverseProxy__KnownNetworks__0: 172.31.250.0/28
+      AccessControl__IpAllowlist__AllowedNetworks__5: 172.31.250.0/28
+    networks: [photodrive]
 
-  aws-setup:
-    image: public.ecr.aws/aws-cli/aws-cli:latest
-    profiles:
-      - tools
-    env_file:
-      - .env
-    entrypoint:
-      - /bin/sh
-      - /workspace/scripts/configure-s3.sh
-    volumes:
-      - ./scripts:/workspace/scripts:ro
-
-volumes:
-  photodrive-data:
-    name: photodrive-data
+networks:
+  photodrive:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/28

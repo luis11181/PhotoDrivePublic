@@ -1,0 +1,15 @@
+{
+  "UserSeeding": {
+    "DevelopmentDefaultUser": {
+      "Enabled": true,
+      "Email": "mediaexplorer.dev@example.test",
+      "Password": "PhotoDriveDev!2026",
+      "FirstName": "Media Explorer",
+      "LastName": "Development",
+      "Role": "OWNER"
+    }
+  },
+  "UserRoles": {
+    "CacheTimeInMinutes": 60
+  }
+}

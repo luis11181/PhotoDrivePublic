@@ -72,7 +72,7 @@ public static class AuthorizationJwtExtension
 
     public static WebApplication UseMyJwtAuthentication(this WebApplication app)
     {
-        // debe ir antes de add authentication,
+        // debe ir antes de add authentication, 
         app.UseAuthentication();
 
         app.UseAuthorization();

@@ -45,19 +45,10 @@ public sealed class UsersDataSeeder
     /// </summary>
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        var permissions = await _dbContext.Permissions
-            .ToDictionaryAsync(permission => permission.Name, cancellationToken);
-
         var roles = await _dbContext.Roles
-            .Include(role => role.Permissions)
             .ToDictionaryAsync(role => role.Name, cancellationToken);
 
-        EnsureRequiredSeedDataExists(permissions, roles);
-
-        foreach (var roleDefinition in UsersSeedData.Roles)
-        {
-            EnsureRolePermissions(roles, permissions, roleDefinition.Name, roleDefinition.PermissionNames);
-        }
+        EnsureRequiredRolesExist(roles);
 
         await EnsureServiceAccountsAsync(roles, cancellationToken);
 
@@ -165,21 +156,8 @@ public sealed class UsersDataSeeder
         _logger.LogInformation("Ensured the Development-only test owner exists.");
     }
 
-    private static void EnsureRequiredSeedDataExists(
-        Dictionary<string, Permission> permissions,
-        Dictionary<string, Role> roles)
+    private static void EnsureRequiredRolesExist(Dictionary<string, Role> roles)
     {
-        var missingPermissions = UsersSeedData.Permissions
-            .Where(permissionDefinition => !permissions.ContainsKey(permissionDefinition.Name))
-            .Select(permissionDefinition => permissionDefinition.Name)
-            .ToArray();
-
-        if (missingPermissions.Length != 0)
-        {
-            throw new InvalidOperationException(
-                $"Missing required seeded permissions: {string.Join(", ", missingPermissions)}. Apply the EF model migrations for UsersDbContext first.");
-        }
-
         var missingRoles = UsersSeedData.Roles
             .Where(roleDefinition => !roles.ContainsKey(roleDefinition.Name))
             .Select(roleDefinition => roleDefinition.Name)
@@ -189,32 +167,6 @@ public sealed class UsersDataSeeder
         {
             throw new InvalidOperationException(
                 $"Missing required seeded roles: {string.Join(", ", missingRoles)}. Apply the EF model migrations for UsersDbContext first.");
-        }
-    }
-
-    private static void EnsureRolePermissions(
-        Dictionary<string, Role> roles,
-        Dictionary<string, Permission> permissions,
-        string roleName,
-        IEnumerable<string> permissionNames)
-    {
-        if (!roles.TryGetValue(roleName, out var role))
-        {
-            throw new InvalidOperationException($"Required role '{roleName}' was not found.");
-        }
-
-        foreach (var permissionName in permissionNames)
-        {
-            if (!permissions.TryGetValue(permissionName, out var permission))
-            {
-                throw new InvalidOperationException($"Required permission '{permissionName}' was not found.");
-            }
-
-            var result = role.AddPermission(permission);
-            if (result.IsFailure)
-            {
-                throw new InvalidOperationException(result.ErrorValue.Message);
-            }
         }
     }
 

@@ -44,14 +44,14 @@ public sealed class MediaEndpointPolicyTests
     }
 
     [Fact]
-    public void Imports_require_authentication_without_requiring_the_owner_policy()
+    public void Server_imports_require_the_human_owner_policy()
     {
         var authorize = typeof(ImportsController)
             .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
             .Cast<AuthorizeAttribute>()
             .Single();
 
-        authorize.Policy.Should().BeNull();
+        authorize.Policy.Should().Be("Owner");
     }
 
     [Fact]

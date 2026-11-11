@@ -30,10 +30,10 @@ public static class Extensions
         // Add new session and device services
         services.AddScoped<SessionService>();
         services.AddScoped<IUserContactLookupService, UserContactLookupService>();
-
+        
 
         services.AddMemoryCache();
-        services.AddScoped<IUserPermissionsService, UserPermissionsService>();
+        services.AddScoped<IUserRolesService, UserRolesService>();
 
 
         //* add validated configuration options
@@ -62,8 +62,8 @@ public static class Extensions
             .ValidateOnStart();
 
         services
-            .AddOptions<UserPermissionsOptions>()
-            .BindConfiguration("UserPermissions")
+            .AddOptions<UserRolesOptions>()
+            .BindConfiguration("UserRoles")
             .ValidateDataAnnotations()
             .ValidateOnStart();
 

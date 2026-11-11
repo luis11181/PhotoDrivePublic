@@ -1,6 +1,13 @@
 "use client";
 
-import { Heart, RotateCcw, X } from "lucide-react";
+import {
+  ChevronDown,
+  Heart,
+  RotateCcw,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+import { useId, useState } from "react";
 import { usePreferences } from "@/lib/preferences";
 import type {
   CatalogTag,
@@ -81,293 +88,202 @@ export function LibraryFilterBar({
   onSearchIncludesPhotosChange: (value: boolean) => void;
 }) {
   const { t } = usePreferences();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersId = useId();
+  const filterable = view === "photos" || view === "files" || view === "shared";
+  const activeFilterCount = (
+    view === "photos"
+      ? [
+          photoScope !== "folder",
+          mediaType !== "all",
+          photoSort !== "captured_desc",
+          photoYear !== undefined && !photoCaptureDate,
+          photosFavorite,
+          Boolean(selectedTagId),
+        ]
+      : [
+          fileType !== "all",
+          itemSort !== "modified_desc",
+          view === "files" && filesFavorite,
+          Boolean(selectedTagId),
+          searchIncludesPhotos,
+          fileDiscoveryActive && effectiveFileSearchScope === "shared",
+        ]
+  ).filter(Boolean).length;
+
+  function resetFileFilters() {
+    onFileTypeChange("all");
+    onItemSortChange("modified_desc");
+    onSelectedTagChange("");
+    if (filesFavorite) onToggleFilesFavorite();
+    onSearchIncludesPhotosChange(false);
+    onFileSearchScopeChange(parentId ? "subtree" : "all");
+  }
 
   return (
-    <>
-      {view === "photos" && (
-        <>
-          {/^\d/.test(normalizedQuery) && (
-            <p className="photo-search-hint">
-              {t("library.captureDate")} <b>YYYY</b> · <b>YYYY-MM</b> ·{" "}
-              <b>YYYY-MM-DD</b>
-            </p>
-          )}
-          <div
-            className="photo-filter-row"
-            aria-label={t("library.photoFilters")}
-          >
-            <label className="filter-select">
-              <span>{t("library.show")}</span>
-              <select
-                value={photoScope}
-                onChange={(event) =>
-                  onPhotoScopeChange(event.target.value as PhotoScope)
-                }
-              >
-                <option value="folder">{t("library.photosFolder")}</option>
-                <option value="all">{t("library.allMedia")}</option>
-              </select>
-            </label>
-            <label className="filter-select">
-              <span>{t("library.type")}</span>
-              <select
-                value={mediaType}
-                onChange={(event) => onMediaTypeChange(event.target.value)}
-              >
-                <option value="all">{t("library.all")}</option>
-                <option value="image">{t("library.photos")}</option>
-                <option value="video">{t("library.videos")}</option>
-              </select>
-            </label>
-            <label className="filter-select">
-              <span>{t("library.sort")}</span>
-              <select
-                value={photoSort}
-                onChange={(event) =>
-                  onPhotoSortChange(event.target.value as PhotoSort)
-                }
-              >
-                <option value="captured_desc">
-                  {t("library.newestFirst")}
-                </option>
-                <option value="captured_asc">{t("library.oldestFirst")}</option>
-                <option value="added_desc">{t("library.recentlyAdded")}</option>
-              </select>
-            </label>
-            {photoYears && photoYears.length > 0 && (
+    <div
+      className={
+        filterable
+          ? `catalog-filters ${filtersOpen ? "is-open" : ""}`
+          : undefined
+      }
+    >
+      {filterable && (
+        <button
+          className="catalog-filter-toggle"
+          type="button"
+          aria-expanded={filtersOpen}
+          aria-controls={filtersId}
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        >
+          <SlidersHorizontal aria-hidden="true" />
+          <span>{t("library.filtersAndSort")}</span>
+          {activeFilterCount > 0 && <b>{activeFilterCount}</b>}
+          <ChevronDown className="catalog-filter-chevron" aria-hidden="true" />
+        </button>
+      )}
+      <div className="catalog-filter-content" id={filtersId}>
+        {view === "photos" && (
+          <>
+            {/^\d/.test(normalizedQuery) && (
+              <p className="photo-search-hint">
+                {t("library.captureDate")} <b>YYYY</b> · <b>YYYY-MM</b> ·{" "}
+                <b>YYYY-MM-DD</b>
+              </p>
+            )}
+            <div
+              className="photo-filter-row"
+              aria-label={t("library.photoFilters")}
+            >
               <label className="filter-select">
-                <span>{t("library.year")}</span>
+                <span>{t("library.show")}</span>
                 <select
-                  value={photoCaptureDate ? "" : (photoYear ?? "")}
-                  disabled={Boolean(photoCaptureDate)}
+                  value={photoScope}
                   onChange={(event) =>
-                    onPhotoYearChange(
-                      event.target.value
-                        ? Number(event.target.value)
-                        : undefined,
-                    )
+                    onPhotoScopeChange(event.target.value as PhotoScope)
                   }
                 >
-                  <option value="">{t("library.allYears")}</option>
-                  {photoYears.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
+                  <option value="folder">{t("library.photosFolder")}</option>
+                  <option value="all">{t("library.allMedia")}</option>
                 </select>
               </label>
-            )}
-            <TagFilterControl
-              tags={tags}
-              value={selectedTagId}
-              onChange={onSelectedTagChange}
-              onManage={onManageTags}
-            />
-            <button
-              className={`favorite-filter ${photosFavorite ? "active" : ""}`}
-              type="button"
-              aria-pressed={photosFavorite}
-              aria-label={t("library.showFavoritesOnly")}
-              title={t("library.showFavoritesOnly")}
-              onClick={onTogglePhotosFavorite}
-            >
-              <Heart fill={photosFavorite ? "currentColor" : "none"} />
-              <span>{t("library.favorites")}</span>
-            </button>
-            {hasActivePhotoFilters && (
-              <button
-                className="filter-reset"
-                type="button"
-                onClick={onResetPhotoFilters}
-              >
-                <RotateCcw size={14} /> {t("library.reset")}
-              </button>
-            )}
-          </div>
-          {hasActivePhotoFilters && (
-            <div
-              className="active-filter-chips"
-              aria-label={t("library.activeFilters")}
-            >
-              {photoScope !== "folder" && (
-                <button
-                  type="button"
-                  onClick={() => onPhotoScopeChange("folder")}
+              <label className="filter-select">
+                <span>{t("library.type")}</span>
+                <select
+                  value={mediaType}
+                  onChange={(event) => onMediaTypeChange(event.target.value)}
                 >
-                  {t("library.show")}: {t("library.allMedia")} <X />
-                </button>
-              )}
-              {mediaType !== "all" && (
-                <button type="button" onClick={() => onMediaTypeChange("all")}>
-                  {t("library.type")}: {photoTypeLabel(mediaType, t)} <X />
-                </button>
-              )}
-              {photoSort !== "captured_desc" && (
-                <button
-                  type="button"
-                  onClick={() => onPhotoSortChange("captured_desc")}
+                  <option value="all">{t("library.all")}</option>
+                  <option value="image">{t("library.photos")}</option>
+                  <option value="video">{t("library.videos")}</option>
+                </select>
+              </label>
+              <label className="filter-select">
+                <span>{t("library.sort")}</span>
+                <select
+                  value={photoSort}
+                  onChange={(event) =>
+                    onPhotoSortChange(event.target.value as PhotoSort)
+                  }
                 >
-                  {t("library.sort")}: {photoSortLabel(photoSort, t)} <X />
-                </button>
+                  <option value="captured_desc">
+                    {t("library.newestFirst")}
+                  </option>
+                  <option value="captured_asc">
+                    {t("library.oldestFirst")}
+                  </option>
+                  <option value="added_desc">
+                    {t("library.recentlyAdded")}
+                  </option>
+                </select>
+              </label>
+              {photoYears && photoYears.length > 0 && (
+                <label className="filter-select">
+                  <span>{t("library.year")}</span>
+                  <select
+                    value={photoCaptureDate ? "" : (photoYear ?? "")}
+                    disabled={Boolean(photoCaptureDate)}
+                    onChange={(event) =>
+                      onPhotoYearChange(
+                        event.target.value
+                          ? Number(event.target.value)
+                          : undefined,
+                      )
+                    }
+                  >
+                    <option value="">{t("library.allYears")}</option>
+                    {photoYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               )}
-              {photoYear !== undefined && !photoCaptureDate && (
-                <button type="button" onClick={() => onPhotoYearChange()}>
-                  {t("library.year")}: {photoYear} <X />
-                </button>
-              )}
-              {photosFavorite && (
-                <button type="button" onClick={onTogglePhotosFavorite}>
-                  {t("library.favorites")} <X />
-                </button>
-              )}
-              {selectedTagId && (
-                <button type="button" onClick={() => onSelectedTagChange("")}>
-                  {t("library.tag")}:{" "}
-                  {tags.find((tag) => tag.id === selectedTagId)?.name ??
-                    selectedTagId}{" "}
-                  <X />
-                </button>
-              )}
-            </div>
-          )}
-        </>
-      )}
-      {(view === "files" || view === "shared") && (
-        <>
-          <div className="file-sort-row">
-            <label className="filter-select">
-              <span>{t("library.type")}</span>
-              <select
-                value={fileType}
-                onChange={(event) =>
-                  onFileTypeChange(event.target.value as FileTypeFilter)
-                }
-              >
-                <option value="all">{t("library.allItems")}</option>
-                <option value="folder">{t("library.folders")}</option>
-                <option value="document">{t("library.documents")}</option>
-                <option value="pdf">PDFs</option>
-                <option value="spreadsheet">{t("library.spreadsheets")}</option>
-                <option value="image">{t("library.images")}</option>
-                <option value="video">{t("library.videos")}</option>
-              </select>
-            </label>
-            <label className="filter-select">
-              <span>{t("library.sortBy")}</span>
-              <select
-                value={itemSort}
-                onChange={(event) =>
-                  onItemSortChange(event.target.value as ItemSort)
-                }
-              >
-                <option value="name_asc">{t("library.nameAsc")}</option>
-                <option value="name_desc">{t("library.nameDesc")}</option>
-                <option value="modified_desc">
-                  {t(
-                    view === "files"
-                      ? "sidebar.recent"
-                      : "library.modifiedNewest",
-                  )}
-                </option>
-                <option value="modified_asc">
-                  {t("library.modifiedOldest")}
-                </option>
-                <option value="size_desc">{t("library.sizeLargest")}</option>
-                <option value="size_asc">{t("library.sizeSmallest")}</option>
-              </select>
-            </label>
-            {view === "files" && effectiveFileSearchScope !== "shared" && (
               <TagFilterControl
                 tags={tags}
                 value={selectedTagId}
                 onChange={onSelectedTagChange}
                 onManage={onManageTags}
               />
-            )}
-            {view === "files" && fileDiscoveryActive && (
-              <div className="discovery-scope-control">
-                <label className="filter-select">
-                  <span>{t("library.lookIn")}</span>
-                  <select
-                    value={effectiveFileSearchScope}
-                    onChange={(event) =>
-                      onFileSearchScopeChange(
-                        event.target.value as FileDiscoveryScope,
-                      )
-                    }
-                  >
-                    {parentId && (
-                      <option value="subtree">{t("library.thisFolder")}</option>
-                    )}
-                    <option value="all">{t("library.allFiles")}</option>
-                    {normalizedQuery.length >= 2 && (
-                      <option value="shared">
-                        {t("library.sharedWithMe")}
-                      </option>
-                    )}
-                  </select>
-                </label>
-                {effectiveFileSearchScope === "subtree" && (
-                  <small>{t("library.includesSubfolders")}</small>
-                )}
-              </div>
-            )}
-            {view === "files" && effectiveFileSearchScope !== "shared" && (
               <button
-                className={`favorite-filter ${filesFavorite ? "active" : ""}`}
+                className={`favorite-filter ${photosFavorite ? "active" : ""}`}
                 type="button"
-                aria-pressed={filesFavorite}
+                aria-pressed={photosFavorite}
                 aria-label={t("library.showFavoritesOnly")}
                 title={t("library.showFavoritesOnly")}
-                onClick={onToggleFilesFavorite}
+                onClick={onTogglePhotosFavorite}
               >
-                <Heart fill={filesFavorite ? "currentColor" : "none"} />
+                <Heart fill={photosFavorite ? "currentColor" : "none"} />
                 <span>{t("library.favorites")}</span>
               </button>
-            )}
-            {normalizedQuery.length < 2 && <p>{t("library.foldersFirst")}</p>}
-          </div>
-          {view === "files" &&
-            fileDiscoveryActive &&
-            effectiveFileSearchScope === "all" && (
-              <details className="search-options">
-                <summary>{t("library.advancedOptions")}</summary>
-                <div>
-                  <label className="search-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={searchIncludesPhotos}
-                      onChange={(event) =>
-                        onSearchIncludesPhotosChange(event.target.checked)
-                      }
-                    />
-                    {t("library.includePhotos")}
-                  </label>
-                </div>
-              </details>
-            )}
-          {view === "files" && effectiveFileSearchScope === "shared" && (
-            <p className="search-scope-help">{t("library.sharedSearchHelp")}</p>
-          )}
-          {view === "files" &&
-            (filesFavorite ||
-              fileType !== "all" ||
-              selectedTagId ||
-              (fileDiscoveryActive &&
-                (effectiveFileSearchScope !== "all" ||
-                  searchIncludesPhotos))) && (
+              {hasActivePhotoFilters && (
+                <button
+                  className="filter-reset"
+                  type="button"
+                  onClick={onResetPhotoFilters}
+                >
+                  <RotateCcw size={14} /> {t("library.reset")}
+                </button>
+              )}
+            </div>
+            {hasActivePhotoFilters && (
               <div
                 className="active-filter-chips"
                 aria-label={t("library.activeFilters")}
               >
-                {filesFavorite && (
-                  <button type="button" onClick={onToggleFilesFavorite}>
-                    {t("library.favorites")} <X />
+                {photoScope !== "folder" && (
+                  <button
+                    type="button"
+                    onClick={() => onPhotoScopeChange("folder")}
+                  >
+                    {t("library.show")}: {t("library.allMedia")} <X />
                   </button>
                 )}
-                {fileType !== "all" && (
-                  <button type="button" onClick={() => onFileTypeChange("all")}>
-                    {t("library.type")}: {fileTypeLabel(fileType, t)} <X />
+                {mediaType !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => onMediaTypeChange("all")}
+                  >
+                    {t("library.type")}: {photoTypeLabel(mediaType, t)} <X />
+                  </button>
+                )}
+                {photoSort !== "captured_desc" && (
+                  <button
+                    type="button"
+                    onClick={() => onPhotoSortChange("captured_desc")}
+                  >
+                    {t("library.sort")}: {photoSortLabel(photoSort, t)} <X />
+                  </button>
+                )}
+                {photoYear !== undefined && !photoCaptureDate && (
+                  <button type="button" onClick={() => onPhotoYearChange()}>
+                    {t("library.year")}: {photoYear} <X />
+                  </button>
+                )}
+                {photosFavorite && (
+                  <button type="button" onClick={onTogglePhotosFavorite}>
+                    {t("library.favorites")} <X />
                   </button>
                 )}
                 {selectedTagId && (
@@ -378,41 +294,213 @@ export function LibraryFilterBar({
                     <X />
                   </button>
                 )}
-                {view === "files" &&
-                  fileDiscoveryActive &&
-                  effectiveFileSearchScope !== "all" && (
+              </div>
+            )}
+          </>
+        )}
+        {(view === "files" || view === "shared") && (
+          <>
+            <div className="file-sort-row">
+              <label className="filter-select">
+                <span>{t("library.type")}</span>
+                <select
+                  value={fileType}
+                  onChange={(event) =>
+                    onFileTypeChange(event.target.value as FileTypeFilter)
+                  }
+                >
+                  <option value="all">{t("library.allItems")}</option>
+                  <option value="folder">{t("library.folders")}</option>
+                  <option value="document">{t("library.documents")}</option>
+                  <option value="pdf">PDFs</option>
+                  <option value="spreadsheet">
+                    {t("library.spreadsheets")}
+                  </option>
+                  <option value="image">{t("library.images")}</option>
+                  <option value="video">{t("library.videos")}</option>
+                </select>
+              </label>
+              <label className="filter-select">
+                <span>{t("library.sortBy")}</span>
+                <select
+                  value={itemSort}
+                  onChange={(event) =>
+                    onItemSortChange(event.target.value as ItemSort)
+                  }
+                >
+                  <option value="name_asc">{t("library.nameAsc")}</option>
+                  <option value="name_desc">{t("library.nameDesc")}</option>
+                  <option value="modified_desc">
+                    {t(
+                      view === "files"
+                        ? "sidebar.recent"
+                        : "library.modifiedNewest",
+                    )}
+                  </option>
+                  <option value="modified_asc">
+                    {t("library.modifiedOldest")}
+                  </option>
+                  <option value="size_desc">{t("library.sizeLargest")}</option>
+                  <option value="size_asc">{t("library.sizeSmallest")}</option>
+                </select>
+              </label>
+              {view === "files" && effectiveFileSearchScope !== "shared" && (
+                <TagFilterControl
+                  tags={tags}
+                  value={selectedTagId}
+                  onChange={onSelectedTagChange}
+                  onManage={onManageTags}
+                />
+              )}
+              {view === "files" && fileDiscoveryActive && (
+                <div className="discovery-scope-control">
+                  <label className="filter-select">
+                    <span>{t("library.lookIn")}</span>
+                    <select
+                      value={effectiveFileSearchScope}
+                      onChange={(event) =>
+                        onFileSearchScopeChange(
+                          event.target.value as FileDiscoveryScope,
+                        )
+                      }
+                    >
+                      {parentId && (
+                        <option value="subtree">
+                          {t("library.thisFolder")}
+                        </option>
+                      )}
+                      <option value="all">{t("library.allFiles")}</option>
+                      {normalizedQuery.length >= 2 && (
+                        <option value="shared">
+                          {t("library.sharedWithMe")}
+                        </option>
+                      )}
+                    </select>
+                  </label>
+                  {effectiveFileSearchScope === "subtree" && (
+                    <small>{t("library.includesSubfolders")}</small>
+                  )}
+                </div>
+              )}
+              {view === "files" && effectiveFileSearchScope !== "shared" && (
+                <button
+                  className={`favorite-filter ${filesFavorite ? "active" : ""}`}
+                  type="button"
+                  aria-pressed={filesFavorite}
+                  aria-label={t("library.showFavoritesOnly")}
+                  title={t("library.showFavoritesOnly")}
+                  onClick={onToggleFilesFavorite}
+                >
+                  <Heart fill={filesFavorite ? "currentColor" : "none"} />
+                  <span>{t("library.favorites")}</span>
+                </button>
+              )}
+              {normalizedQuery.length < 2 && <p>{t("library.foldersFirst")}</p>}
+              {activeFilterCount > 0 && (
+                <button
+                  className="filter-reset"
+                  type="button"
+                  onClick={resetFileFilters}
+                >
+                  <RotateCcw size={14} /> {t("library.reset")}
+                </button>
+              )}
+            </div>
+            {view === "files" &&
+              fileDiscoveryActive &&
+              effectiveFileSearchScope === "all" && (
+                <details className="search-options">
+                  <summary>{t("library.advancedOptions")}</summary>
+                  <div>
+                    <label className="search-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={searchIncludesPhotos}
+                        onChange={(event) =>
+                          onSearchIncludesPhotosChange(event.target.checked)
+                        }
+                      />
+                      {t("library.includePhotos")}
+                    </label>
+                  </div>
+                </details>
+              )}
+            {view === "files" && effectiveFileSearchScope === "shared" && (
+              <p className="search-scope-help">
+                {t("library.sharedSearchHelp")}
+              </p>
+            )}
+            {view === "files" &&
+              (filesFavorite ||
+                fileType !== "all" ||
+                selectedTagId ||
+                (fileDiscoveryActive &&
+                  (effectiveFileSearchScope !== "all" ||
+                    searchIncludesPhotos))) && (
+                <div
+                  className="active-filter-chips"
+                  aria-label={t("library.activeFilters")}
+                >
+                  {filesFavorite && (
+                    <button type="button" onClick={onToggleFilesFavorite}>
+                      {t("library.favorites")} <X />
+                    </button>
+                  )}
+                  {fileType !== "all" && (
                     <button
                       type="button"
-                      onClick={() => onFileSearchScopeChange("all")}
+                      onClick={() => onFileTypeChange("all")}
                     >
-                      {t("library.lookIn")}:{" "}
-                      {effectiveFileSearchScope === "subtree"
-                        ? t("library.thisFolder")
-                        : t("library.sharedWithMe")}{" "}
+                      {t("library.type")}: {fileTypeLabel(fileType, t)} <X />
+                    </button>
+                  )}
+                  {selectedTagId && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectedTagChange("")}
+                    >
+                      {t("library.tag")}:{" "}
+                      {tags.find((tag) => tag.id === selectedTagId)?.name ??
+                        selectedTagId}{" "}
                       <X />
                     </button>
                   )}
-                {view === "files" &&
-                  fileDiscoveryActive &&
-                  searchIncludesPhotos && (
-                    <button
-                      type="button"
-                      onClick={() => onSearchIncludesPhotosChange(false)}
-                    >
-                      {t("library.includePhotos")} <X />
-                    </button>
-                  )}
-              </div>
-            )}
-        </>
-      )}
-      {view === "shared" && !parentId && (
-        <p className="status-note">{t("library.sharedExplanation")}</p>
-      )}
-      {view === "trash" && (
-        <p className="status-note">{t("library.trashExplanation")}</p>
-      )}
-    </>
+                  {view === "files" &&
+                    fileDiscoveryActive &&
+                    effectiveFileSearchScope !== "all" && (
+                      <button
+                        type="button"
+                        onClick={() => onFileSearchScopeChange("all")}
+                      >
+                        {t("library.lookIn")}:{" "}
+                        {effectiveFileSearchScope === "subtree"
+                          ? t("library.thisFolder")
+                          : t("library.sharedWithMe")}{" "}
+                        <X />
+                      </button>
+                    )}
+                  {view === "files" &&
+                    fileDiscoveryActive &&
+                    searchIncludesPhotos && (
+                      <button
+                        type="button"
+                        onClick={() => onSearchIncludesPhotosChange(false)}
+                      >
+                        {t("library.includePhotos")} <X />
+                      </button>
+                    )}
+                </div>
+              )}
+          </>
+        )}
+        {view === "shared" && !parentId && (
+          <p className="status-note">{t("library.sharedExplanation")}</p>
+        )}
+        {view === "trash" && (
+          <p className="status-note">{t("library.trashExplanation")}</p>
+        )}
+      </div>
+    </div>
   );
 }
 

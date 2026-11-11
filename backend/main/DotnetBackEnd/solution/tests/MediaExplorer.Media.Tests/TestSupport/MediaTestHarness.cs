@@ -1,6 +1,7 @@
 using CSSApps.Shared.Contracts.Primitives;
 using MediaExplorer.Media.Application;
 using MediaExplorer.Media.Contracts;
+using CSSApps.Shared.Infrastructure.Data.Turso;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -12,7 +13,6 @@ namespace MediaExplorer.Media.Tests.TestSupport;
 internal sealed class MediaTestHarness : IAsyncDisposable
 {
     private readonly string _databasePath;
-    private readonly string _usersDatabasePath;
     private readonly IConfiguration _configuration;
     private readonly MemoryCache _storageSummaryCache = new(new MemoryCacheOptions());
 
@@ -21,17 +21,15 @@ internal sealed class MediaTestHarness : IAsyncDisposable
         RootDirectory = Path.Combine(Path.GetTempPath(), $"media-explorer-tests-{Guid.NewGuid():N}");
         StagingDirectory = Path.Combine(RootDirectory, "staging");
         _databasePath = Path.Combine(RootDirectory, "catalog.db");
-        _usersDatabasePath = Path.Combine(RootDirectory, "users.db");
         var values = new Dictionary<string, string?>
         {
+            ["MediaStorage:Imports:SourceDirectory"] = RootDirectory,
             ["MediaStorage:LocalDisk:StagingDirectory"] = StagingDirectory,
             ["MediaStorage:LocalDisk:ThumbnailDirectory"] = Path.Combine(RootDirectory, "thumbnails"),
             ["MediaStorage:LocalDisk:OriginalCacheDirectory"] = Path.Combine(RootDirectory, "blobs", "sha256"),
             ["MediaStorage:LocalDisk:OriginalCacheMaxBytes"] = (32L * 1024 * 1024).ToString(),
             ["MediaStorage:LocalDisk:BackupDirectory"] = Path.Combine(RootDirectory, "backups"),
-            ["MediaStorage:BackupStrategies:PortableJsonExportsEnabled"] = "true",
-            ["ConnectionStrings:UsersModule"] = $"Data Source={_usersDatabasePath};Foreign Keys=True;Pooling=False",
-            ["ConnectionStrings:MediaCatalog"] = $"Data Source={_databasePath};Foreign Keys=True;Pooling=False",
+            ["Database:Url"] = _databasePath,
             ["MediaStorage:ImageToolPath"] = "convert",
             ["MediaStorage:ImageIdentifyToolPath"] = "identify",
             ["MediaStorage:VideoThumbnailToolPath"] = "ffmpeg"
@@ -45,7 +43,6 @@ internal sealed class MediaTestHarness : IAsyncDisposable
 
     public string RootDirectory { get; }
     public string StagingDirectory { get; }
-    public string UsersDatabasePath => _usersDatabasePath;
     public IConfiguration Configuration => _configuration;
     public TestObjectStoreFactory ObjectStoreFactory { get; } = new();
     public IMediaMetadataExtractor? MetadataExtractorOverride { get; set; }
@@ -53,17 +50,55 @@ internal sealed class MediaTestHarness : IAsyncDisposable
     public ImportWorkSignal ImportWorkSignal { get; } = new();
     public CacheBuildWorkSignal CacheBuildWorkSignal { get; } = new();
 
+    /// <summary>
+    /// Starts from a copy of one database migrated once per test run: migrating took most of every test's setup.
+    /// </summary>
     public async Task InitializeAsync()
     {
         Directory.CreateDirectory(RootDirectory);
-        await using var dbContext = CreateDbContext();
-        await new MediaCatalogInitializer(dbContext).InitializeAsync();
+        File.Copy(await MigratedTemplate.Value, _databasePath);
     }
 
-    public MediaCatalogDbContext CreateDbContext() => new(
-        new DbContextOptionsBuilder<MediaCatalogDbContext>()
-            .UseSqlite($"Data Source={_databasePath};Foreign Keys=True;Pooling=False")
-            .Options);
+    private static readonly Lazy<Task<string>> MigratedTemplate = new(CreateMigratedTemplateAsync);
+
+    private static async Task<string> CreateMigratedTemplateAsync()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"media-explorer-tests-template-{Guid.NewGuid():N}.db");
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            foreach (var file in new[] { path, path + "-wal", path + "-shm" }) File.Delete(file);
+        };
+        await using var database = new TursoDatabase(
+            Microsoft.Extensions.Options.Options.Create(new TursoDatabaseOptions { Url = path }),
+            NullLogger<TursoDatabase>.Instance);
+        var options = new DbContextOptionsBuilder<MediaCatalogDbContext>();
+        database.Configure(options, DatabaseRouteKind.Cloud, TursoDatabase.MediaHistoryTable);
+        await using (var dbContext = new MediaCatalogDbContext(options.Options))
+        {
+            await new MediaCatalogInitializer(dbContext).InitializeAsync();
+        }
+
+        // Move everything into the main file so a plain file copy is a complete database.
+        await using var connection = database.OpenConnection(DatabaseRouteKind.Cloud);
+        await using var checkpoint = connection.CreateCommand();
+        checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await checkpoint.ExecuteNonQueryAsync();
+        return path;
+    }
+
+    public MediaCatalogDbContext CreateDbContext()
+    {
+        var options = new DbContextOptionsBuilder<MediaCatalogDbContext>();
+        Database.Configure(options, DatabaseRouteKind.Cloud, TursoDatabase.MediaHistoryTable);
+        return new MediaCatalogDbContext(options.Options);
+    }
+
+    /// <summary>The same connection setup the host uses, pointed at this test's local Turso file.</summary>
+    public TursoDatabase Database => _database ??= new TursoDatabase(
+        Microsoft.Extensions.Options.Options.Create(new TursoDatabaseOptions { Url = _databasePath }),
+        NullLogger<TursoDatabase>.Instance);
+
+    private TursoDatabase? _database;
 
     public MediaTestClient CreateService(MediaCatalogDbContext dbContext) => new(CreateResultService(dbContext));
 
@@ -107,6 +142,7 @@ internal sealed class MediaTestHarness : IAsyncDisposable
             UploaderIdentityDirectory,
             MetadataWorkSignal,
             ImportWorkSignal,
+            _configuration,
             NullLogger<ImportService>.Instance);
     }
 

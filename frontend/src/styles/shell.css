@@ -115,7 +115,9 @@
   color: var(--muted);
   font-size: 12px;
 }
-.nav-item.nav-subitem svg { width: 16px; }
+.nav-item.nav-subitem svg {
+  width: 16px;
+}
 .nav-label {
   margin: 3px 11px 6px;
   color: #87908c;
@@ -147,7 +149,7 @@
 .storage-card {
   margin-top: auto;
   padding: 13px;
-  border: 1px solid #d5ddd8;
+  border: 1px solid var(--line);
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.55);
 }
@@ -401,6 +403,15 @@
   gap: 12px;
   margin-left: auto;
 }
+.topbar-section {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
 .account-trigger {
   min-width: 34px;
   width: auto;
@@ -528,9 +539,6 @@
 .menu-button {
   display: none;
 }
-.menu-button-always-visible {
-  display: grid;
-}
 .nav-label-first {
   margin-top: 26px;
 }
@@ -549,3 +557,10 @@
 .sidebar-spacer {
   flex: 1;
 }
+
+/* Storage is an occasional utility, kept compact at the foot of navigation. */
+.storage-compact {display:flex;align-items:center;border-top:1px solid var(--line);padding:14px 0 0;margin-top:16px;gap:4px;}
+.storage-compact>a {display:flex;align-items:center;gap:9px;flex:1;min-width:0;color:var(--muted);text-decoration:none;font-size:12px;padding:10px 8px;border-radius:7px;}
+.storage-compact>a:hover,.storage-compact>a.active {background:var(--sidebar-active);color:var(--ink);}
+.storage-compact strong {margin-left:auto;font-size:11px;white-space:nowrap;font-weight:600;}
+.storage-compact .storage-refresh {flex:0 0 26px;}

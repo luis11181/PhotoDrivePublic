@@ -1,3 +1,4 @@
+using CSSApps.Shared.Infrastructure.Data.Turso;
 using MediaExplorer.Media.Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -9,15 +10,16 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddMediaInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("MediaCatalog")
-            ?? throw new InvalidOperationException("Connection string 'MediaCatalog' was not configured.");
-        services.AddDbContext<MediaCatalogDbContext>(options => options.UseSqlite(connectionString));
+        services.AddTursoDatabase(configuration);
+        services.AddDbContext<MediaCatalogDbContext>((provider, options) => provider.GetRequiredService<TursoDatabase>()
+            .Configure(options, provider.GetRequiredService<DatabaseRoute>().Kind, TursoDatabase.MediaHistoryTable, provider.GetRequiredService<CloudConnectionLease>()));
         services.AddScoped<MediaCatalogService>();
         services.AddScoped<LibraryBootstrapper>();
         services.AddScoped<CatalogAuthorization>();
         services.AddScoped<ISharingService, SharingService>();
         services.AddScoped<IAlbumService, AlbumService>();
         services.AddScoped<ITimelineEventService, TimelineEventService>();
+        services.AddScoped<IStorageUsageService, StorageUsageService>();
         services.AddScoped<ICatalogBatchService, CatalogBatchService>();
         services.AddScoped<ITagService, TagService>();
         services.AddScoped<ICatalogQueryService>(provider => provider.GetRequiredService<MediaCatalogService>());
@@ -38,14 +40,14 @@ public static class DependencyInjection
         services.AddScoped<ICacheBuildService>(provider => provider.GetRequiredService<CacheBuildService>());
         services.AddScoped<MediaCatalogInitializer>();
         services.AddScoped<StorageReconciliationService>();
-        services.AddScoped<CatalogBackupService>();
-        services.AddScoped<UsersBackupService>();
-        services.AddScoped<ICatalogBackupRemoteStore, S3CatalogBackupStore>();
-        services.AddSingleton<CatalogBackupCheckpoint>();
-        services.AddSingleton<CatalogBackupExecutionLock>();
-        services.AddScoped<CatalogBackupPipeline>();
+        services.AddSingleton(HostIdentity.FromConfiguration(configuration));
+        services.AddSingleton<ClusterCoordinator>();
+        services.AddHostedService<HostHeartbeatHostedService>();
+        services.AddScoped<DatabaseBackupService>();
+        services.AddScoped<IDatabaseBackupRemoteStore, S3DatabaseBackupStore>();
+        services.AddSingleton<DatabaseBackupExecutionLock>();
         services.AddScoped<IMediaMaintenanceService, MediaMaintenanceService>();
-        services.AddHostedService<DailyCatalogBackupHostedService>();
+        services.AddHostedService<DatabaseBackupHostedService>();
         services.AddHostedService<MediaMetadataHostedService>();
         services.AddHostedService<ImportHostedService>();
         services.AddHostedService<CacheBuildHostedService>();

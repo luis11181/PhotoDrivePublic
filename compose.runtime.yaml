@@ -1,0 +1,114 @@
+# Shared Linux-container runtime for Windows and Arch. Use the launchers to set
+# host paths. Environment files below select the project, network and JSON layer.
+services:
+  photodrive:
+    build:
+      context: .
+      args:
+        PHOTODRIVE_UID: "${PHOTODRIVE_UID:-1000}"
+        PHOTODRIVE_GID: "${PHOTODRIVE_GID:-1000}"
+    image: photodrive-personal:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Production validation requires this Development-only setting to be empty.
+      Startup__DevelopmentDatabaseInitializationMode: ""
+      Urls: http://0.0.0.0:8080
+      AWS_SHARED_CREDENTIALS_FILE: /home/photodrive/.aws/credentials
+      AWS_CONFIG_FILE: /home/photodrive/.aws/config
+      AWS_EC2_METADATA_DISABLED: "true"
+      PHOTODRIVE_DATABASE_DIRECTORY: /data/databases
+      PHOTODRIVE_CACHE_DIRECTORY: /data/cache
+      # Shared Turso database: the URL comes from infrastructure*.json, the token from the mounted secrets file.
+      Database__ReplicaPath: /data/databases/turso/photodrive.replica.db
+      # Containers get random machine names; show the real computer in the Servers list.
+      Host__Name: "${PHOTODRIVE_HOST_NAME:-}"
+      Security__DataProtectionKeysDirectory: /data/databases/keys
+      MediaStorage__LocalDisk__StagingDirectory: /data/cache/staging
+      MediaStorage__LocalDisk__ThumbnailDirectory: /data/cache/thumbnails
+      MediaStorage__LocalDisk__OriginalCacheDirectory: /data/cache/blobs/sha256
+      MediaStorage__LocalDisk__BackupDirectory: /data/cache/backups
+      # Pass a host override only when configured; otherwise retain the JSON budget.
+      MediaStorage__LocalDisk__OriginalCacheMaxBytes:
+      MediaStorage__Imports__SourceDirectory: "${PHOTODRIVE_IMPORT_TARGET:?Use a PhotoDrive launcher}"
+      ReverseProxy__Enabled: "${PHOTODRIVE_REVERSE_PROXY_ENABLED:-false}"
+    ports:
+      - "${PHOTODRIVE_BIND_ADDRESS:-127.0.0.1}:${PHOTODRIVE_PORT:-60020}:8080"
+    volumes:
+      - type: bind
+        source: ${PHOTODRIVE_DATABASE_DIRECTORY:?Use a PhotoDrive launcher}
+        target: /data/databases
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PHOTODRIVE_CACHE_DIRECTORY:?Use a PhotoDrive launcher}
+        target: /data/cache
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PHOTODRIVE_IMPORT_DIRECTORY:?Use a PhotoDrive launcher}
+        target: ${PHOTODRIVE_IMPORT_TARGET:?Use a PhotoDrive launcher}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PHOTODRIVE_AWS_DIRECTORY:?Use a PhotoDrive launcher}
+        target: /home/photodrive/.aws
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/appsettings.json
+        target: /app/appsettings.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/authentication.json
+        target: /app/authentication.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/deployment.json
+        target: /app/deployment.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/infrastructure.json
+        target: /app/infrastructure.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/logging.json
+        target: /app/logging.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/usersSettings.json
+        target: /app/usersSettings.json
+        read_only: true
+        bind:
+          create_host_path: false
+      # Untracked per-environment secrets (secrets.Development.json or secrets.Production.json), chosen by the launcher.
+      - type: bind
+        source: ${PHOTODRIVE_SECRETS_FILE:?Use a PhotoDrive launcher}
+        target: /app/secrets.json
+        read_only: true
+        bind:
+          create_host_path: false
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=${PHOTODRIVE_TMPFS_SIZE:-512m},mode=1777
+    shm_size: ${PHOTODRIVE_SHM_SIZE:-128m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    stop_grace_period: 60s

@@ -387,15 +387,15 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
             ReclaimableTrashBytes = reclaimableTrashBytes,
             CalculatedAt = DateTime.UtcNow
         };
-        storageSummaryCache.Set(cacheKey, summary);
+        storageSummaryCache.Set(cacheKey, summary, TimeSpan.FromMinutes(5));
         logger.LogInformation("[media.storage] summary calculated uniqueOriginals={UniqueOriginalCount} storedBytes={StoredOriginalBytes} reclaimableTrashOriginals={ReclaimableTrashOriginalCount} reclaimableTrashBytes={ReclaimableTrashBytes}", summary.UniqueOriginalCount, summary.StoredOriginalBytes, summary.ReclaimableTrashOriginalCount, summary.ReclaimableTrashBytes);
         return summary;
     }
 
     public async Task<Result<BrowseItemsRes>> SearchAsync(Guid userId, string query, string scope, string photoScope, string type, string? cursor, int limit, Guid? tagId, CancellationToken cancellationToken)
     {
-        var ftsQuery = ToFtsQuery(query);
-        if (ftsQuery is null) return MediaErrors.Validation("Enter at least two letters or numbers to search your catalog.");
+        var searchTerms = SearchText.Terms(query);
+        if (searchTerms is null) return MediaErrors.Validation("Enter at least two letters or numbers to search your catalog.");
         var normalizedScope = string.IsNullOrWhiteSpace(scope) ? "all" : scope.Trim().ToLowerInvariant();
         var normalizedPhotoScope = string.IsNullOrWhiteSpace(photoScope) ? "folder" : photoScope.Trim().ToLowerInvariant();
         var normalizedType = NormalizeFileType(type);
@@ -412,7 +412,7 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
             cancellationToken);
         var mediaFolderIds = await DescendantFolderIdsAsync(library.Id, mediaRootId, cancellationToken);
         var offset = DecodeSearchCursor(cursor);
-        var candidates = await SearchCandidatesAsync(library.Id, ftsQuery, normalizedScope, normalizedPhotoScope, normalizedType, tagId, offset, limit, cancellationToken);
+        var candidates = await SearchCandidatesAsync(library.Id, searchTerms, normalizedScope, normalizedPhotoScope, normalizedType, tagId, offset, limit, cancellationToken);
         if (candidates.Count == 0) return new BrowseItemsRes();
 
         var pageCandidates = candidates.Take(limit).ToArray();
@@ -487,7 +487,7 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
         if (includePhotos && normalizedLocation != "all")
             return MediaErrors.Validation("Photos can be included only when discovering all Files.");
 
-        var normalizedQuery = string.IsNullOrWhiteSpace(query) ? null : ToFtsQuery(query);
+        var normalizedQuery = string.IsNullOrWhiteSpace(query) ? null : SearchText.Terms(query);
         if (!string.IsNullOrWhiteSpace(query) && normalizedQuery is null)
             return MediaErrors.Validation("Enter at least two letters or numbers to search your catalog.");
 
@@ -1790,7 +1790,7 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
                     || dbContext.CatalogShares.AsNoTracking().Any(share =>
                         share.AlbumId == candidate.Id
                         && share.RecipientUserId == userId
-                        && share.Role == CatalogShare.ViewerRole))
+                        && (share.Role == CatalogShare.ViewerRole || share.Role == CatalogShare.CollaboratorRole)))
             select new { candidate.Name })
             .SingleOrDefaultAsync(cancellationToken);
         if (album is null) return MediaErrors.NotFound("The album was not found.");
@@ -2544,7 +2544,7 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
     private async Task<List<SearchCandidate>> QueryFileCandidatesAsync(
         Guid libraryId,
         Guid userId,
-        string query,
+        IReadOnlyList<string> terms,
         Guid rootFolderId,
         bool recursive,
         bool includePhotos,
@@ -2562,6 +2562,7 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
         try
         {
             await using var command = connection.CreateCommand();
+            var match = SearchText.MatchAll(command, terms, "q", "catalog_search.name", "catalog_search.tags");
             command.CommandText = """
                 WITH RECURSIVE location_folders(Id) AS (
                   SELECT Id
@@ -2598,7 +2599,7 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
                 LEFT JOIN files sort_file
                   ON catalog_search.kind = 'file'
                     AND sort_file.Id = catalog_search.item_id COLLATE NOCASE
-                WHERE catalog_search MATCH $query
+                WHERE {match}
                   AND library_id = $libraryId COLLATE NOCASE
                   AND (
                     (kind = 'folder'
@@ -2682,16 +2683,15 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
                   CASE WHEN $sort IN ('name_asc', 'modified_asc', 'size_desc', 'size_asc') THEN COALESCE(sort_folder.Sequence, sort_file.Sequence) END ASC,
                   catalog_search.item_id
                 LIMIT $limit OFFSET $offset;
-                """;
-            AddCommandParameter(command, "$query", query);
-            AddCommandParameter(command, "$libraryId", libraryId.ToString("D"));
-            AddCommandParameter(command, "$userId", userId.ToString("D"));
-            AddCommandParameter(command, "$rootFolderId", rootFolderId.ToString("D"));
+                """.Replace("{match}", match, StringComparison.Ordinal);
+            AddCommandParameter(command, "$libraryId", libraryId.ToDbText());
+            AddCommandParameter(command, "$userId", userId.ToDbText());
+            AddCommandParameter(command, "$rootFolderId", rootFolderId.ToDbText());
             AddCommandParameter(command, "$recursive", recursive ? 1 : 0);
             AddCommandParameter(command, "$includePhotos", includePhotos ? 1 : 0);
             AddCommandParameter(command, "$favorite", favorite ? 1 : 0);
             AddCommandParameter(command, "$type", type);
-            AddCommandParameter(command, "$tagId", tagId.HasValue ? tagId.Value.ToString("D") : DBNull.Value);
+            AddCommandParameter(command, "$tagId", tagId.HasValue ? tagId.Value.ToDbText() : DBNull.Value);
             AddCommandParameter(command, "$sort", sort);
             AddCommandParameter(command, "$limit", limit + 1);
             AddCommandParameter(command, "$offset", offset);
@@ -2719,7 +2719,7 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
         command.Parameters.Add(parameter);
     }
 
-    private async Task<List<SearchCandidate>> SearchCandidatesAsync(Guid libraryId, string query, string scope, string photoScope, string type, Guid? tagId, int offset, int limit, CancellationToken cancellationToken)
+    private async Task<List<SearchCandidate>> SearchCandidatesAsync(Guid libraryId, IReadOnlyList<string> terms, string scope, string photoScope, string type, Guid? tagId, int offset, int limit, CancellationToken cancellationToken)
     {
         var connection = dbContext.Database.GetDbConnection();
         var openedHere = connection.State != ConnectionState.Open;
@@ -2727,6 +2727,8 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
         try
         {
             await using var command = connection.CreateCommand();
+            var match = SearchText.MatchAll(command, terms, "q", "catalog_search.name", "catalog_search.tags");
+            var nameMatch = SearchText.MatchAll(command, terms, "n", "catalog_search.name");
             command.CommandText = """
                 WITH RECURSIVE media_folders(Id) AS (
                   SELECT Id
@@ -2741,7 +2743,7 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
                 )
                 SELECT item_id, kind
                 FROM catalog_search
-                WHERE catalog_search MATCH $query
+                WHERE {match}
                   AND library_id = $libraryId COLLATE NOCASE
                   AND (
                     (kind = 'folder'
@@ -2798,15 +2800,14 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
                       )
                     )
                   )
-                ORDER BY rank, item_id
+                ORDER BY CASE WHEN {nameMatch} THEN 0 ELSE 1 END, catalog_search.name, item_id
                 LIMIT $limit OFFSET $offset;
-                """;
-            AddCommandParameter(command, "$query", query);
-            AddCommandParameter(command, "$libraryId", libraryId.ToString("D"));
+                """.Replace("{match}", match, StringComparison.Ordinal).Replace("{nameMatch}", nameMatch, StringComparison.Ordinal);
+            AddCommandParameter(command, "$libraryId", libraryId.ToDbText());
             AddCommandParameter(command, "$scope", scope);
             AddCommandParameter(command, "$photoScope", photoScope);
             AddCommandParameter(command, "$type", type);
-            AddCommandParameter(command, "$tagId", tagId.HasValue ? tagId.Value.ToString("D") : DBNull.Value);
+            AddCommandParameter(command, "$tagId", tagId.HasValue ? tagId.Value.ToDbText() : DBNull.Value);
             AddCommandParameter(command, "$limit", limit + 1);
             AddCommandParameter(command, "$offset", offset);
 
@@ -2862,15 +2863,6 @@ internal sealed class MediaCatalogService(MediaCatalogDbContext dbContext, Libra
         }
     }
 
-    private static string? ToFtsQuery(string? query)
-    {
-        var terms = (query ?? string.Empty)
-            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(term => term.Any(char.IsLetterOrDigit))
-            .ToArray();
-        if (terms.Sum(term => term.Count(char.IsLetterOrDigit)) < 2) return null;
-        return string.Join(" AND ", terms.Select(term => "\"" + term.Replace("\"", "\"\"") + "\"*"));
-    }
 
     private static int DecodeSearchCursor(string? cursor)
     {

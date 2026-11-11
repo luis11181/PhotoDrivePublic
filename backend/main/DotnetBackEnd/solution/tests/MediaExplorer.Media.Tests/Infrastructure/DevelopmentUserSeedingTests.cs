@@ -3,6 +3,7 @@ using CSSApps.Users.Application.Services.Auth.Password;
 using CSSApps.Users.Application.Settings;
 using CSSApps.Users.Contracts.Constants;
 using CSSApps.Users.Domain.Entities.UserAggregate;
+using CSSApps.Shared.Infrastructure.Data.Turso;
 using CSSApps.Users.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,17 @@ namespace MediaExplorer.Media.Tests.Infrastructure;
 
 public sealed class DevelopmentUserSeedingTests
 {
+    // The same local Turso file engine the application uses (plain SQLite is no longer a dependency).
+    private static DbContextOptions<UsersDbContext> UsersDbOptions(string databasePath)
+    {
+        var database = new TursoDatabase(
+            Options.Create(new TursoDatabaseOptions { Url = databasePath }),
+            NullLogger<TursoDatabase>.Instance);
+        var builder = new DbContextOptionsBuilder<UsersDbContext>();
+        database.Configure(builder, DatabaseRouteKind.Cloud, TursoDatabase.UsersHistoryTable);
+        return builder.Options;
+    }
+
     [Fact]
     public async Task Development_fixture_is_a_ready_to_use_owner_without_bootstrap_configuration()
     {
@@ -22,9 +34,7 @@ public sealed class DevelopmentUserSeedingTests
         try
         {
             await using var dbContext = new UsersDbContext(
-                new DbContextOptionsBuilder<UsersDbContext>()
-                    .UseSqlite($"Data Source={databasePath};Foreign Keys=True;Pooling=False")
-                    .Options,
+                UsersDbOptions(databasePath),
                 NullExecutionContextAccessor.Instance);
             await dbContext.Database.EnsureCreatedAsync();
 
@@ -40,7 +50,7 @@ public sealed class DevelopmentUserSeedingTests
                 {
                     Enabled = true,
                     Email = "mediaexplorer.dev@example.test",
-                    Password = "MediaExplorerDev!2026",
+                    Password = "PhotoDriveDev!2026",
                     FirstName = "Media Explorer",
                     LastName = "Development",
                     Role = Roles.Owner
@@ -57,7 +67,7 @@ public sealed class DevelopmentUserSeedingTests
             user.IsEmailVerified.Should().BeTrue();
             user.MustChangePassword.Should().BeFalse();
             user.Roles.Select(role => role.Name).Should().ContainSingle().Which.Should().Be(Roles.Owner);
-            passwordService.VerifyPassword("MediaExplorerDev!2026", user.PasswordHash!).SuccessValue
+            passwordService.VerifyPassword("PhotoDriveDev!2026", user.PasswordHash!).SuccessValue
                 .Should().BeTrue();
         }
         finally
@@ -73,9 +83,7 @@ public sealed class DevelopmentUserSeedingTests
         try
         {
             await using var dbContext = new UsersDbContext(
-                new DbContextOptionsBuilder<UsersDbContext>()
-                    .UseSqlite($"Data Source={databasePath};Foreign Keys=True;Pooling=False")
-                    .Options,
+                UsersDbOptions(databasePath),
                 NullExecutionContextAccessor.Instance);
             await dbContext.Database.EnsureCreatedAsync();
 
@@ -98,7 +106,7 @@ public sealed class DevelopmentUserSeedingTests
                 {
                     Enabled = true,
                     Email = "mediaexplorer.dev@example.test",
-                    Password = "MediaExplorerDev!2026",
+                    Password = "PhotoDriveDev!2026",
                     FirstName = "Media Explorer",
                     Role = Roles.Owner
                 }),
@@ -125,9 +133,7 @@ public sealed class DevelopmentUserSeedingTests
         try
         {
             await using var dbContext = new UsersDbContext(
-                new DbContextOptionsBuilder<UsersDbContext>()
-                    .UseSqlite($"Data Source={databasePath};Foreign Keys=True;Pooling=False")
-                    .Options,
+                UsersDbOptions(databasePath),
                 NullExecutionContextAccessor.Instance);
             await dbContext.Database.EnsureCreatedAsync();
 
@@ -152,7 +158,7 @@ public sealed class DevelopmentUserSeedingTests
                 {
                     Enabled = true,
                     Email = "mediaexplorer.dev@example.test",
-                    Password = "MediaExplorerDev!2026",
+                    Password = "PhotoDriveDev!2026",
                     FirstName = "Media Explorer",
                     LastName = "Development",
                     Role = Roles.Owner
@@ -187,9 +193,7 @@ public sealed class DevelopmentUserSeedingTests
         try
         {
             await using var dbContext = new UsersDbContext(
-                new DbContextOptionsBuilder<UsersDbContext>()
-                    .UseSqlite($"Data Source={databasePath};Foreign Keys=True;Pooling=False")
-                    .Options,
+                UsersDbOptions(databasePath),
                 NullExecutionContextAccessor.Instance);
             await dbContext.Database.EnsureCreatedAsync();
 
@@ -199,7 +203,7 @@ public sealed class DevelopmentUserSeedingTests
             {
                 Enabled = true,
                 Email = "mediaexplorer.dev@example.test",
-                Password = "MediaExplorerDev!2026",
+                Password = "PhotoDriveDev!2026",
                 FirstName = "Media Explorer",
                 LastName = "Development",
                 Role = Roles.Owner

@@ -1,13 +1,14 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import type { CurrentUser } from "@/lib/auth";
 import { getStorageSummary } from "@/lib/api";
 import { LibrarySidebar } from "@/features/library/components/library-sidebar";
 import { LibraryTopbar } from "@/features/library/components/library-topbar";
+import { usePreferences } from "@/lib/preferences";
 
-type PageView = "imports" | "developer" | "users";
+type PageView = "imports" | "developer" | "users" | "storage";
 
 export function PageNavigationShell({
   view,
@@ -23,12 +24,22 @@ export function PageNavigationShell({
   children: ReactNode;
 }) {
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const { t } = usePreferences();
+  const queryClient = useQueryClient();
+  const storageKey = ["storage-summary"];
   const storage = useQuery({
-    queryKey: ["storage-summary"],
+    queryKey: storageKey,
     queryFn: () => getStorageSummary(),
     staleTime: Infinity,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
+  });
+  const refreshStorage = useMutation({
+    mutationFn: () => getStorageSummary({ refresh: true }),
+    onMutate: () => queryClient.cancelQueries({ queryKey: storageKey }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(storageKey, data);
+    },
   });
 
   return (
@@ -39,8 +50,8 @@ export function PageNavigationShell({
         onClose={() => setNavigationOpen(false)}
         storageSummary={storage.data}
         storageLoading={storage.isLoading}
-        storageRefreshing={storage.isFetching}
-        onRefreshStorage={() => void storage.refetch()}
+        storageRefreshing={storage.isFetching || refreshStorage.isPending}
+        onRefreshStorage={() => refreshStorage.mutate()}
         isOwner={user.isOwner}
       />
       <section className="workspace">
@@ -48,11 +59,16 @@ export function PageNavigationShell({
           query=""
           onQueryChange={() => undefined}
           showSearch={false}
-          alwaysShowMenu
+          sectionLabel={t(
+            view === "storage" ? "sidebar.storage" : view === "imports"
+              ? "sidebar.imports"
+              : view === "users"
+                ? "sidebar.familyAccounts"
+                : "sidebar.developerTools",
+          )}
           onOpenNavigation={() => setNavigationOpen(true)}
           onOpenAccount={onOpenAccount}
           onSignOut={onSignOut}
-          onToggleNotifications={() => undefined}
           notificationCount={0}
           notificationsOpen={false}
           operationRunning={false}

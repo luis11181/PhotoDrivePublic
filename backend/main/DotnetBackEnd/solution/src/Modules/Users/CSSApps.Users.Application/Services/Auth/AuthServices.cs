@@ -18,7 +18,7 @@ namespace CSSApps.Users.Application.Services.Auth;
 
 /// <summary>
 /// Main authentication service handling login, logout, and token operations.
-///
+/// 
 /// Authentication Flow:
 /// 1. User logs in via Login() or GoogleLoginOrRegister()
 /// 2. System generates access token (JWT stored in HttpOnly cookie)

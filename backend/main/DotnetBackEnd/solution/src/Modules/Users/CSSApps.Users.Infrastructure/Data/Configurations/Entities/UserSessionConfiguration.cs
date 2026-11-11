@@ -11,7 +11,7 @@ internal sealed class UserSessionConfiguration : IEntityTypeConfiguration<UserSe
         builder.ToTable("user_sessions");
 
         builder.HasKey(e => e.Id);
-
+        
         // Indexes for performance
         builder.HasIndex(e => new { e.UserId, e.IsActive, e.LastActivity });
 

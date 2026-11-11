@@ -7,9 +7,7 @@ public static class SeedDbExtensionMethod
 {
     public static void Seed(this ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Permission>().HasData(UsersSeedData.PermissionRows);
         modelBuilder.Entity<Role>().HasData(UsersSeedData.RoleRows);
-        modelBuilder.Entity("role_permissions").HasData(UsersSeedData.RolePermissionRows);
     }
 }
 

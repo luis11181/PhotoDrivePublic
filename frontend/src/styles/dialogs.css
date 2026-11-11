@@ -5,10 +5,16 @@
   padding: 20px;
   display: grid;
   place-items: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(13, 20, 17, 0.48);
 }
 .modal {
   width: min(430px, 100%);
+  min-height: 0;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   position: relative;
   padding: 28px;
   background: white;
@@ -231,6 +237,15 @@
   color: var(--muted);
   font-size: 0.82rem;
 }
+
+select.share-role {
+  max-width: 145px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
 .album-sharing-summary {
   display: grid;
   gap: 3px;
@@ -253,7 +268,7 @@
 }
 .album-photo-picker-modal {
   width: min(680px, calc(100vw - 24px));
-  max-height: min(760px, calc(100dvh - 24px));
+  max-height: min(760px, calc(100dvh - 40px));
   overflow: auto;
 }
 .album-photo-picker-grid {
@@ -526,7 +541,11 @@
   overflow: auto;
   background: var(--surface-control);
   color: var(--ink);
-  font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font:
+    13px/1.55 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
   tab-size: 2;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

@@ -70,7 +70,7 @@ public class ServiceApiKeySchemeHandler : AuthenticationHandler<AuthenticationSc
 
     /// <summary>
     /// Generates claims for the authenticated user.
-    ///
+    /// 
     /// Includes both JWT registered claim names and standard ClaimTypes for consistency
     /// across all auth methods (JWT, Cookie, API Key). This ensures User.Identity.Name
     /// and User.Claims work correctly regardless of authentication method.
@@ -80,18 +80,18 @@ public class ServiceApiKeySchemeHandler : AuthenticationHandler<AuthenticationSc
         // User ID - JWT standard + ClaimTypes for compatibility
         yield return new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString());
         yield return new Claim(ClaimTypes.NameIdentifier, user.Id.ToString());
-
+        
         // User Name - both formats for User.Identity.Name compatibility
         yield return new Claim(JwtRegisteredClaimNames.Name, user.Name.FullName);
         yield return new Claim(ClaimTypes.Name, user.Name.FullName);
-
+        
         // Given name
         yield return new Claim(JwtRegisteredClaimNames.GivenName, user.Name.FullName);
-
+        
         // Email
         yield return new Claim(JwtRegisteredClaimNames.Email, user.Email);
 
-        //Roles and permissions are added via Claims Transformation on each request
+        // Roles are added by AddUserRolesClaimsTransformation on each request
 
         // Authentication method indicator (different from JWT/Cookie)
         yield return new Claim(ClaimTypes.AuthenticationMethod, "ServiceApiKey");

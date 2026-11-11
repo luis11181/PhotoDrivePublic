@@ -17,12 +17,11 @@ public class UsersDbContext(
 {
     public virtual DbSet<User> Users { get; init; }
     public virtual DbSet<Role> Roles { get; init; }
-    public virtual DbSet<Permission> Permissions { get; init; }
     public virtual DbSet<UserToken> UserTokens { get; init; }
     public virtual DbSet<UserSession> UserSessions { get; init; }
     public virtual DbSet<SecurityToken> SecurityTokens { get; init; }
     public virtual DbSet<SecurityAuditEvent> SecurityAuditEvents { get; init; }
-
+    
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         //Scans the current assembly (DLL) for all classes that implement IEntityTypeConfiguration<T>
@@ -32,7 +31,7 @@ public class UsersDbContext(
 
         base.OnModelCreating(modelBuilder);
     }
-
+    
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         optionsBuilder.AddInterceptors(new AuditableEntityInterceptor(executionContextAccessor));
@@ -53,5 +52,5 @@ public class UsersDbContext(
     {
         configurationBuilder.ConfigGlobalEnumConversions();
     }
-
+    
 }

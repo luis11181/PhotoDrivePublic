@@ -1,0 +1,36 @@
+{
+  "JwtSettings": {
+    "AccessTokenSecret": "replace-with-a-development-secret-of-at-least-32-bytes",
+    "AccessTokenExpirationMinutes": 30,
+    "RefreshTokenExpirationMinutes": 10080,
+    "Issuer": "MediaExplorer",
+    "Audience": "MediaExplorer",
+    "ValidateAudience": true,
+    "ValidateIssuer": true
+  },
+  "OAuth": {
+    "Google": {
+      "ClientId": "",
+      "UserInfoUrl": "https://www.googleapis.com/oauth2/v1/userinfo"
+    }
+  },
+  "FamilyAuthentication": {
+    "PasswordLoginEnabled": true,
+    "PasswordResetLifetimeMinutes": 30,
+    "BootstrapOwner": {
+      "Email": "owner@example.test",
+      "InitialPassword": ""
+    }
+  },
+  "feature_management": {
+    "feature_flags": [
+      {
+        "id": "RefreshTokens",
+        "enabled": true
+      }
+    ]
+  },
+  "ServiceApiKeys": {
+    "Keys": {}
+  }
+}

@@ -32,7 +32,7 @@ export function LibraryTopbar({
   user,
   searchDisabled = false,
   showSearch = true,
-  alwaysShowMenu = false,
+  sectionLabel,
   eventSuggestions = [],
   eventSuggestionsLoading = false,
   onSelectEvent,
@@ -43,14 +43,14 @@ export function LibraryTopbar({
   onOpenNavigation: () => void;
   onOpenAccount?: () => void;
   onSignOut?: () => Promise<void>;
-  onToggleNotifications: () => void;
+  onToggleNotifications?: () => void;
   notificationCount: number;
   notificationsOpen: boolean;
   operationRunning: boolean;
   user?: CurrentUser;
   searchDisabled?: boolean;
   showSearch?: boolean;
-  alwaysShowMenu?: boolean;
+  sectionLabel?: string;
   eventSuggestions?: TimelineEvent[];
   eventSuggestionsLoading?: boolean;
   onSelectEvent?: (event: TimelineEvent) => void;
@@ -89,12 +89,13 @@ export function LibraryTopbar({
   return (
     <header className="topbar">
       <button
-        className={`icon-button menu-button ${alwaysShowMenu ? "menu-button-always-visible" : ""}`}
+        className="icon-button menu-button"
         onClick={onOpenNavigation}
         aria-label={t("topbar.openNavigation")}
       >
         <Menu />
       </button>
+      {sectionLabel && <span className="topbar-section">{sectionLabel}</span>}
       {showSearch && <div className="search">
         <Search size={19} />
         <input
@@ -174,7 +175,7 @@ export function LibraryTopbar({
       </div>}
       <div className="topbar-actions">
         <PreferenceControls className="topbar-preferences" />
-        <button
+        {onToggleNotifications && <button
           className={`icon-button notification-button ${notificationsOpen ? "active" : ""}`}
           onClick={onToggleNotifications}
           aria-label={t("topbar.notifications")}
@@ -186,7 +187,7 @@ export function LibraryTopbar({
               {notificationCount > 9 ? "9+" : notificationCount}
             </span>
           )}
-        </button>
+        </button>}
         <div className="account-menu-wrap" ref={accountMenuRef}>
           <button
             className="account-trigger"

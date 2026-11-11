@@ -18,85 +18,6 @@ namespace CSSApps.Users.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.5");
 
-            modelBuilder.Entity("CSSApps.Users.Domain.Entities.UserAggregate.Permission", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("CreatedDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DeletedBy")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("DeletedDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(500)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("UpdatedDate")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.ToTable("permissions", (string)null);
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("7ca69cf0-d5b1-4db0-93e8-62714da2cd09"),
-                            CreatedBy = "System",
-                            CreatedDate = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Can read user data",
-                            Name = "users.read",
-                            Status = "ACTIVE",
-                            UpdatedBy = "System",
-                            UpdatedDate = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            Id = new Guid("e0581e2b-c663-4da2-8005-6600627fd589"),
-                            CreatedBy = "System",
-                            CreatedDate = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Can modify user data",
-                            Name = "users.write",
-                            Status = "ACTIVE",
-                            UpdatedBy = "System",
-                            UpdatedDate = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
-                        },
-                        new
-                        {
-                            Id = new Guid("9cb8d685-a9bf-4c78-9ec2-f3790428c35d"),
-                            CreatedBy = "System",
-                            CreatedDate = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Can manage roles",
-                            Name = "roles.manage",
-                            Status = "ACTIVE",
-                            UpdatedBy = "System",
-                            UpdatedDate = new DateTime(2024, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
-                        });
-                });
-
             modelBuilder.Entity("CSSApps.Users.Domain.Entities.UserAggregate.Role", b =>
                 {
                     b.Property<Guid>("Id")
@@ -551,38 +472,6 @@ namespace CSSApps.Users.Infrastructure.Migrations
                     b.ToTable("user_tokens", (string)null);
                 });
 
-            modelBuilder.Entity("role_permissions", b =>
-                {
-                    b.Property<Guid>("permission_id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("role_id")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("permission_id", "role_id");
-
-                    b.HasIndex("role_id");
-
-                    b.ToTable("role_permissions");
-
-                    b.HasData(
-                        new
-                        {
-                            permission_id = new Guid("7ca69cf0-d5b1-4db0-93e8-62714da2cd09"),
-                            role_id = new Guid("1b7defa3-89c5-4bd1-887d-5317d2b7ed3e")
-                        },
-                        new
-                        {
-                            permission_id = new Guid("e0581e2b-c663-4da2-8005-6600627fd589"),
-                            role_id = new Guid("1b7defa3-89c5-4bd1-887d-5317d2b7ed3e")
-                        },
-                        new
-                        {
-                            permission_id = new Guid("9cb8d685-a9bf-4c78-9ec2-f3790428c35d"),
-                            role_id = new Guid("1b7defa3-89c5-4bd1-887d-5317d2b7ed3e")
-                        });
-                });
-
             modelBuilder.Entity("user_roles", b =>
                 {
                     b.Property<Guid>("role_id")
@@ -626,21 +515,6 @@ namespace CSSApps.Users.Infrastructure.Migrations
                     b.HasOne("CSSApps.Users.Domain.Entities.UserAggregate.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("role_permissions", b =>
-                {
-                    b.HasOne("CSSApps.Users.Domain.Entities.UserAggregate.Permission", null)
-                        .WithMany()
-                        .HasForeignKey("permission_id")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("CSSApps.Users.Domain.Entities.UserAggregate.Role", null)
-                        .WithMany()
-                        .HasForeignKey("role_id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

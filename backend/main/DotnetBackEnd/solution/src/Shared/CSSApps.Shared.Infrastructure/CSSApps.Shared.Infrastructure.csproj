@@ -5,10 +5,13 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.5" />
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.5" />
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\CSSApps.Shared.Contracts\CSSApps.Shared.Contracts.csproj" />
+        <ProjectReference Include="..\Turso.EntityFrameworkCore.Sqlite\Turso.EntityFrameworkCore.Sqlite.csproj" />
     </ItemGroup>
 
     <ItemGroup>

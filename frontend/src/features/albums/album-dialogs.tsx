@@ -28,7 +28,7 @@ import {
   thumbnailUrl,
   updateAlbum,
 } from "@/lib/api";
-import type { Album, MediaItem } from "@/lib/types";
+import type { Album, AlbumShareRole, MediaItem } from "@/lib/types";
 import { usePreferences } from "@/lib/preferences";
 
 export function AlbumEditorDialog({
@@ -144,6 +144,7 @@ export function AlbumShareDialog({
   const { t } = usePreferences();
   const queryClient = useQueryClient();
   const [recipientId, setRecipientId] = useState("");
+  const [role, setRole] = useState<AlbumShareRole>("viewer");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const recipients = useQuery({
@@ -165,8 +166,26 @@ export function AlbumShareDialog({
     setBusy(true);
     setError("");
     try {
-      await shareAlbum(album.id, recipientId);
+      await shareAlbum(album.id, recipientId, role);
       setRecipientId("");
+      await Promise.all([
+        shares.refetch(),
+        queryClient.invalidateQueries({ queryKey: ["albums"] }),
+      ]);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : t("albums.shareFailed"),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeRole(recipientUserId: string, nextRole: AlbumShareRole) {
+    setBusy(true);
+    setError("");
+    try {
+      await shareAlbum(album.id, recipientUserId, nextRole);
       await Promise.all([
         shares.refetch(),
         queryClient.invalidateQueries({ queryKey: ["albums"] }),
@@ -236,13 +255,29 @@ export function AlbumShareDialog({
               ))}
           </select>
         </label>
+        <label className="share-recipient-control">
+          {t("albums.accessRole")}
+          <select
+            value={role}
+            disabled={busy}
+            onChange={(event) => setRole(event.target.value as AlbumShareRole)}
+          >
+            <option value="viewer">{t("albums.viewer")}</option>
+            <option value="collaborator">{t("albums.collaborator")}</option>
+          </select>
+        </label>
         <button
           className="primary full"
           type="button"
           disabled={busy || !recipientId}
           onClick={() => void grant()}
         >
-          <Share2 size={17} /> {t("albums.shareViewer")}
+          <Share2 size={17} />{" "}
+          {t(
+            role === "collaborator"
+              ? "albums.shareCollaborator"
+              : "albums.shareViewer",
+          )}
         </button>
         <div className="share-access-list">
           <strong>
@@ -264,7 +299,25 @@ export function AlbumShareDialog({
                   <b>{share.recipientDisplayName}</b>
                   <small>{share.recipientEmail}</small>
                 </span>
-                <span className="share-role">{t("albums.viewer")}</span>
+                <select
+                  className="share-role"
+                  value={share.role}
+                  disabled={busy}
+                  aria-label={t("albums.accessFor", {
+                    name: share.recipientDisplayName,
+                  })}
+                  onChange={(event) =>
+                    void changeRole(
+                      share.recipientUserId,
+                      event.target.value as AlbumShareRole,
+                    )
+                  }
+                >
+                  <option value="viewer">{t("albums.viewer")}</option>
+                  <option value="collaborator">
+                    {t("albums.collaborator")}
+                  </option>
+                </select>
                 <button
                   className="icon-button"
                   type="button"
@@ -515,8 +568,12 @@ export function AddToAlbumDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const albums = useQuery({
-    queryKey: ["albums", "owned"],
-    queryFn: () => listAlbums("owned"),
+    queryKey: ["albums", "editable"],
+    queryFn: async () =>
+      (await listAlbums("all")).filter(
+        (album) =>
+          album.accessRole === "owner" || album.accessRole === "collaborator",
+      ),
   });
 
   async function add() {

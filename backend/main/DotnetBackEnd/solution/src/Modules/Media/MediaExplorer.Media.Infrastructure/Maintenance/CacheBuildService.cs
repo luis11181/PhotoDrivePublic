@@ -15,9 +15,12 @@ internal sealed class CacheBuildService(
     MediaThumbnailCache thumbnailCache,
     CacheBuildWorkSignal workSignal,
     IConfiguration configuration,
-    ILogger<CacheBuildService> logger) : ICacheBuildService
+    ILogger<CacheBuildService> logger,
+    HostIdentity? host = null) : ICacheBuildService
 {
     private static readonly TimeSpan ProcessingLease = TimeSpan.FromMinutes(15);
+    // Jobs belong to the host whose local inbox or cache they use; null host ids (older jobs, tests) run anywhere.
+    private readonly Guid? _hostId = host?.Id;
     private readonly string _workingDirectory = Path.Combine(
         Path.GetFullPath(configuration["MediaStorage:LocalDisk:StagingDirectory"] ?? "media-explorer.staging"),
         "cache-build");
@@ -60,9 +63,9 @@ internal sealed class CacheBuildService(
     public async Task<Result<CacheBuildJobRes>> StartAsync(Guid userId, StartCacheBuildReq request, CancellationToken cancellationToken)
     {
         var operationActive = await dbContext.CacheBuildJobs.AnyAsync(
-            job => job.State == CacheBuildJob.PendingState
+            job => (_hostId == null || job.HostId == null || job.HostId == _hostId) && (job.State == CacheBuildJob.PendingState
                 || job.State == CacheBuildJob.RunningState
-                || job.State == CacheBuildJob.CancellingState,
+                || job.State == CacheBuildJob.CancellingState),
             cancellationToken);
         if (operationActive) return MediaErrors.Conflict("A catalog cache build is already running.");
 
@@ -79,7 +82,7 @@ internal sealed class CacheBuildService(
         if (preview.QueuedItemCount == 0) return MediaErrors.Conflict("The catalog cache is already current.");
 
         var previousOperations = await dbContext.CacheBuildJobs
-            .Where(job => job.State != CacheBuildJob.PendingState
+            .Where(job => (_hostId == null || job.HostId == null || job.HostId == _hostId) && job.State != CacheBuildJob.PendingState
                 && job.State != CacheBuildJob.RunningState
                 && job.State != CacheBuildJob.CancellingState)
             .ToListAsync(cancellationToken);
@@ -89,6 +92,7 @@ internal sealed class CacheBuildService(
         var job = new CacheBuildJob
         {
             RequestedByUserId = userId,
+            HostId = host?.Id,
             KeepOriginals = request.KeepOriginals,
             SelectedItemCount = preview.SelectedItemCount,
             QueuedItemCount = preview.QueuedItemCount,
@@ -181,7 +185,7 @@ internal sealed class CacheBuildService(
                 .Where(candidate => candidate.State == CacheBuildItem.PendingState
                     || (candidate.State == CacheBuildItem.ProcessingState && candidate.ProcessingStartedAt < staleBefore))
                 .Join(
-                    dbContext.CacheBuildJobs.Where(job => job.State == CacheBuildJob.PendingState || job.State == CacheBuildJob.RunningState),
+                    dbContext.CacheBuildJobs.Where(job => (job.State == CacheBuildJob.PendingState || job.State == CacheBuildJob.RunningState) && (_hostId == null || job.HostId == null || job.HostId == _hostId)),
                     candidate => candidate.CacheBuildJobId,
                     job => job.Id,
                     (candidate, _) => candidate)

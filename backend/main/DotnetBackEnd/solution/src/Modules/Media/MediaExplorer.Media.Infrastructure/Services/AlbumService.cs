@@ -37,8 +37,9 @@ internal sealed class AlbumService(
                 from share in dbContext.CatalogShares.AsNoTracking()
                 join album in dbContext.Albums.AsNoTracking() on share.AlbumId equals album.Id
                 join library in dbContext.Libraries.AsNoTracking() on album.LibraryId equals library.Id
-                where share.RecipientUserId == userId && share.Role == CatalogShare.ViewerRole
-                select new AlbumRow(album, library.OwnerUserId, false, share.CreatedAt)).ToListAsync(cancellationToken));
+                where share.RecipientUserId == userId
+                    && (share.Role == CatalogShare.ViewerRole || share.Role == CatalogShare.CollaboratorRole)
+                select new AlbumRow(album, library.OwnerUserId, false, share.CreatedAt, share.Role)).ToListAsync(cancellationToken));
         }
 
         var albumIds = rows.Select(row => row.Album.Id).Distinct().ToArray();
@@ -97,7 +98,8 @@ internal sealed class AlbumService(
                 EF.Functions.Like(member.File.Name, pattern, "\\") ||
                 (access.IsOwner && dbContext.FileTags.Any(assignment =>
                     assignment.FileId == member.File.Id && dbContext.Tags.Any(tag =>
-                        tag.Id == assignment.TagId && EF.Functions.Like(tag.Name, pattern, "\\")))));
+                        tag.Id == assignment.TagId && tag.LibraryId == access.Album.LibraryId
+                        && EF.Functions.Like(tag.Name, pattern, "\\")))));
         }
 
         var availableYears = await members
@@ -126,14 +128,16 @@ internal sealed class AlbumService(
         var favorites = await dbContext.FileUserStates.AsNoTracking()
             .Where(state => state.UserId == userId && state.Favorite && fileIds.Contains(state.FileId))
             .Select(state => state.FileId).ToHashSetAsync(cancellationToken);
-        var tags = access.IsOwner
-            ? await TagsForFilesAsync(fileIds, cancellationToken)
-            : new Dictionary<Guid, IReadOnlyList<TagSummaryRes>>();
+        var ownedLibraryIds = await dbContext.Libraries.AsNoTracking()
+            .Where(library => library.OwnerUserId == userId)
+            .Select(library => library.Id).ToArrayAsync(cancellationToken);
+        var tags = await TagsForFilesAsync(
+            files.Where(file => ownedLibraryIds.Contains(file.LibraryId)).Select(file => file.Id).ToArray(), cancellationToken);
         var ownerProfiles = access.IsOwner
             ? new Dictionary<Guid, ShareRecipientProfile>()
             : await recipientDirectory.FindByIdsAsync([access.OwnerUserId], cancellationToken);
         var facts = (await MemberFactsAsync([albumId], cancellationToken)).GetValueOrDefault(albumId);
-        var albumRow = new AlbumRow(access.Album, access.OwnerUserId, access.IsOwner, access.SharedAt);
+        var albumRow = new AlbumRow(access.Album, access.OwnerUserId, access.IsOwner, access.SharedAt, access.Role);
 
         return new AlbumDetailsRes
         {
@@ -141,7 +145,7 @@ internal sealed class AlbumService(
             Items = files.Select(file => MediaCatalogService.ToFileResponse(
                 file,
                 favorites.Contains(file.Id),
-                readOnly: !access.IsOwner,
+                readOnly: !ownedLibraryIds.Contains(file.LibraryId),
                 sharedByDisplayName: ownerProfiles.GetValueOrDefault(access.OwnerUserId)?.DisplayName,
                 sharedAt: access.SharedAt,
                 tags: tags.GetValueOrDefault(file.Id))).ToList(),
@@ -197,18 +201,19 @@ internal sealed class AlbumService(
 
     public async Task<Result> AddItemAsync(Guid userId, Guid albumId, Guid fileId, CancellationToken cancellationToken)
     {
-        var owned = await OwnedAlbumAsync(userId, albumId, cancellationToken);
-        if (owned is null) return MediaErrors.NotFound("The album was not found in your library.");
+        var editable = await EditableAlbumAsync(userId, albumId, cancellationToken);
+        if (editable is null) return MediaErrors.NotFound("The album was not found or cannot be edited.");
         var eligible = await dbContext.Files.AsNoTracking().AnyAsync(file =>
-            file.Id == fileId && file.LibraryId == owned.LibraryId && file.TrashedAt == null
+            file.Id == fileId && dbContext.Libraries.Any(library => library.Id == file.LibraryId && library.OwnerUserId == userId)
+            && file.TrashedAt == null
             && (file.MimeType.StartsWith("image/") || file.MimeType.StartsWith("video/")), cancellationToken);
-        if (!eligible) return MediaErrors.NotFound("Choose an active image or video from the same library.");
+        if (!eligible) return MediaErrors.NotFound("Choose an active image or video from your library.");
         var exists = await dbContext.AlbumItems.AnyAsync(item => item.AlbumId == albumId && item.FileId == fileId, cancellationToken);
         if (!exists)
         {
             var now = DateTime.UtcNow;
             dbContext.AlbumItems.Add(new AlbumItem { AlbumId = albumId, FileId = fileId, AddedByUserId = userId, AddedAt = now });
-            owned.ModifiedAt = now;
+            editable.ModifiedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken);
             logger.LogInformation("[media.albums] album member added albumId={AlbumId} fileId={FileId}", albumId, fileId);
         }
@@ -217,13 +222,13 @@ internal sealed class AlbumService(
 
     public async Task<Result> RemoveItemAsync(Guid userId, Guid albumId, Guid fileId, CancellationToken cancellationToken)
     {
-        var owned = await OwnedAlbumAsync(userId, albumId, cancellationToken);
-        if (owned is null) return MediaErrors.NotFound("The album was not found in your library.");
+        var editable = await EditableAlbumAsync(userId, albumId, cancellationToken);
+        if (editable is null) return MediaErrors.NotFound("The album was not found or cannot be edited.");
         var membership = await dbContext.AlbumItems.SingleOrDefaultAsync(item => item.AlbumId == albumId && item.FileId == fileId, cancellationToken);
         if (membership is not null)
         {
             dbContext.AlbumItems.Remove(membership);
-            owned.ModifiedAt = DateTime.UtcNow;
+            editable.ModifiedAt = DateTime.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
             logger.LogInformation("[media.albums] album member removed albumId={AlbumId} fileId={FileId}", albumId, fileId);
         }
@@ -242,13 +247,17 @@ internal sealed class AlbumService(
         if (itemIds.Distinct().Count() != itemIds.Length)
             return MediaErrors.Validation("Album item IDs must be unique.");
 
-        var owned = await OwnedAlbumAsync(userId, albumId, cancellationToken);
-        if (owned is null) return MediaErrors.NotFound("The album was not found in your library.");
+        var editable = await EditableAlbumAsync(userId, albumId, cancellationToken);
+        if (editable is null) return MediaErrors.NotFound("The album was not found or cannot be edited.");
 
         var ids = itemIds.ToHashSet();
         var files = await dbContext.Files
             .AsNoTracking()
-            .Where(file => ids.Contains(file.Id) && file.LibraryId == owned.LibraryId)
+            .Where(file => ids.Contains(file.Id)
+                && (request.Included
+                    ? dbContext.Libraries.Any(library => library.Id == file.LibraryId && library.OwnerUserId == userId)
+                    : dbContext.AlbumItems.Any(member => member.AlbumId == albumId && member.FileId == file.Id)
+                        || dbContext.Libraries.Any(library => library.Id == file.LibraryId && library.OwnerUserId == userId)))
             .ToDictionaryAsync(file => file.Id, cancellationToken);
         var memberships = await dbContext.AlbumItems
             .Where(item => item.AlbumId == albumId && ids.Contains(item.FileId))
@@ -278,7 +287,7 @@ internal sealed class AlbumService(
                         itemId,
                         "failed",
                         MediaErrors.ConflictCode,
-                        "Choose an active image or video from the same library."));
+                        "Choose an active image or video from your library."));
                     continue;
                 }
                 if (memberships.ContainsKey(itemId))
@@ -307,7 +316,7 @@ internal sealed class AlbumService(
         }
 
         if (results.Any(result => result.Status == "succeeded"))
-            owned.ModifiedAt = now;
+            editable.ModifiedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         var summary = CatalogBatchService.Summarize(itemIds.Length, results);
@@ -338,8 +347,9 @@ internal sealed class AlbumService(
 
     public async Task<Result<ItemShareRes>> SetShareAsync(Guid userId, Guid albumId, Guid recipientUserId, SetItemShareReq request, CancellationToken cancellationToken)
     {
-        if (!string.Equals(request.Role?.Trim(), CatalogShare.ViewerRole, StringComparison.OrdinalIgnoreCase))
-            return MediaErrors.Validation("Sharing role must be viewer.");
+        var role = request.Role?.Trim().ToLowerInvariant();
+        if (role is not (CatalogShare.ViewerRole or CatalogShare.CollaboratorRole))
+            return MediaErrors.Validation("Album sharing role must be viewer or collaborator.");
         if (recipientUserId == userId) return MediaErrors.Validation("You cannot share an album with yourself.");
         var owned = await OwnedAlbumAsync(userId, albumId, cancellationToken);
         if (owned is null) return MediaErrors.NotFound("The album was not found in your library.");
@@ -356,7 +366,7 @@ internal sealed class AlbumService(
                 AlbumId = albumId,
                 RecipientUserId = recipientUserId,
                 GrantedByUserId = userId,
-                Role = CatalogShare.ViewerRole,
+                Role = role,
                 CreatedAt = now,
                 ModifiedAt = now
             };
@@ -364,7 +374,7 @@ internal sealed class AlbumService(
         }
         else
         {
-            share.Role = CatalogShare.ViewerRole;
+            share.Role = role;
             share.GrantedByUserId = userId;
             share.ModifiedAt = now;
         }
@@ -390,6 +400,12 @@ internal sealed class AlbumService(
         dbContext.Albums.SingleOrDefaultAsync(album => album.Id == albumId
             && dbContext.Libraries.Any(library => library.Id == album.LibraryId && library.OwnerUserId == userId), cancellationToken);
 
+    private Task<Album?> EditableAlbumAsync(Guid userId, Guid albumId, CancellationToken cancellationToken) =>
+        dbContext.Albums.SingleOrDefaultAsync(album => album.Id == albumId
+            && (dbContext.Libraries.Any(library => library.Id == album.LibraryId && library.OwnerUserId == userId)
+                || dbContext.CatalogShares.Any(share => share.AlbumId == albumId
+                    && share.RecipientUserId == userId && share.Role == CatalogShare.CollaboratorRole)), cancellationToken);
+
     private async Task<AlbumAccess?> AlbumAccessAsync(Guid userId, Guid albumId, CancellationToken cancellationToken)
     {
         var row = await (from album in dbContext.Albums.AsNoTracking()
@@ -398,10 +414,10 @@ internal sealed class AlbumService(
                          select new { Album = album, library.OwnerUserId }).SingleOrDefaultAsync(cancellationToken);
         if (row is null) return null;
         if (row.OwnerUserId == userId) return new AlbumAccess(row.Album, row.OwnerUserId, true, null);
-        var sharedAt = await dbContext.CatalogShares.AsNoTracking()
-            .Where(share => share.AlbumId == albumId && share.RecipientUserId == userId && share.Role == CatalogShare.ViewerRole)
-            .Select(share => (DateTime?)share.CreatedAt).SingleOrDefaultAsync(cancellationToken);
-        return sharedAt.HasValue ? new AlbumAccess(row.Album, row.OwnerUserId, false, sharedAt) : null;
+        var share = await dbContext.CatalogShares.AsNoTracking()
+            .SingleOrDefaultAsync(share => share.AlbumId == albumId && share.RecipientUserId == userId
+                && (share.Role == CatalogShare.ViewerRole || share.Role == CatalogShare.CollaboratorRole), cancellationToken);
+        return share is not null ? new AlbumAccess(row.Album, row.OwnerUserId, false, share.CreatedAt, share.Role) : null;
     }
 
     private async Task<Dictionary<Guid, MemberFacts>> MemberFactsAsync(Guid[] albumIds, CancellationToken cancellationToken)
@@ -460,7 +476,7 @@ internal sealed class AlbumService(
         CoverFileIds = facts?.CoverFileIds ?? [],
         CreatedAt = row.Album.CreatedAt,
         ModifiedAt = row.Album.ModifiedAt,
-        AccessRole = row.IsOwner ? "owner" : CatalogShare.ViewerRole,
+        AccessRole = row.IsOwner ? "owner" : row.Role,
         SharedByDisplayName = row.IsOwner ? null : owner?.DisplayName ?? "Family member",
         SharedAt = row.SharedAt
     };
@@ -504,8 +520,8 @@ internal sealed class AlbumService(
     }
 
     private sealed record AlbumValues(string Name, string? Description);
-    private sealed record AlbumRow(Album Album, Guid OwnerUserId, bool IsOwner, DateTime? SharedAt);
-    private sealed record AlbumAccess(Album Album, Guid OwnerUserId, bool IsOwner, DateTime? SharedAt);
+    private sealed record AlbumRow(Album Album, Guid OwnerUserId, bool IsOwner, DateTime? SharedAt, string Role = CatalogShare.ViewerRole);
+    private sealed record AlbumAccess(Album Album, Guid OwnerUserId, bool IsOwner, DateTime? SharedAt, string Role = CatalogShare.ViewerRole);
     private sealed record MemberFacts(int Count, IReadOnlyList<Guid> CoverFileIds);
     private sealed record TagItemRow(Guid FileId, Guid TagId, string Name, string Color);
 }

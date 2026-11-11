@@ -685,3 +685,23 @@
     transform: rotate(360deg);
   }
 }
+
+.account-settings {width:min(640px,100%);padding:28px;outline:none;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);}
+.account-settings .auth-eyebrow {margin-top:0;}
+.account-settings h2 {margin:0;font-size:24px;letter-spacing:-.025em;}
+.account-profile {display:flex;align-items:center;gap:12px;margin:22px 0 0;}
+.account-settings .account-avatar {display:grid;place-items:center;width:42px;height:42px;background:var(--sidebar-active);color:var(--green);border-radius:50%;font-size:13px;font-weight:700;}
+.account-profile small {display:block;color:var(--muted);font-size:11px;margin-top:4px;}
+.account-settings .account-email {margin:8px 0 22px 54px;}
+.settings-tabs {display:flex;gap:4px;padding:4px;background:var(--surface-inset);border-radius:9px;margin-bottom:20px;}
+.settings-tabs button {flex:1;min-height:36px;border:0;border-radius:7px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;}
+.settings-tabs button[aria-pressed=true] {background:var(--surface);color:var(--ink);box-shadow:0 1px 4px #0001;font-weight:650;}
+.settings-help {font-size:12px;color:var(--muted);line-height:1.6;margin:0 0 16px;}
+.settings-row {display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px 0;border-bottom:1px solid var(--line);font-size:12px;}
+.settings-row small {display:block;color:var(--muted);font-size:11px;line-height:1.5;margin-top:5px;}
+.settings-row select {width:auto;max-width:46%;min-height:36px;padding:6px 28px 6px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface-control);color:var(--ink);font:inherit;}
+.settings-row input[type=checkbox] {width:18px;height:18px;accent-color:var(--green);}
+.account-settings .auth-signout {width:auto;min-height:36px;margin-top:22px;padding:8px 14px;font-size:12px;}
+.account-settings .account-form {margin-top:12px;}
+.account-settings .account-form>div:first-child {font-size:14px;}
+@media(max-width:600px) {.account-backdrop {padding:12px;}.account-settings {padding:22px;max-height:calc(100dvh - 24px);}.settings-row {gap:10px;}}

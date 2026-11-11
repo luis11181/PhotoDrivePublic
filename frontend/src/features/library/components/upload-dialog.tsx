@@ -11,12 +11,14 @@ export function UploadDialog({
   progress,
   onFiles,
   onClose,
+  albumName,
 }: {
   view: LibraryView;
   uploading: boolean;
   progress: string;
   onFiles: (files: FileList) => void;
   onClose: () => void;
+  albumName?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -36,12 +38,18 @@ export function UploadDialog({
           <Upload />
         </div>
         <h2 id="upload-title">
-          {photos ? t("upload.uploadPhotos") : t("upload.uploadFiles")}
+          {albumName
+            ? t("upload.albumTitle", { name: albumName })
+            : photos
+              ? t("upload.uploadPhotos")
+              : t("upload.uploadFiles")}
         </h2>
         <p className="modal-copy">
-          {photos
-            ? t("upload.photosExplanation")
-            : t("upload.filesExplanation")}
+          {albumName
+            ? t("upload.albumHelp")
+            : photos
+              ? t("upload.photosExplanation")
+              : t("upload.filesExplanation")}
         </p>
         <input
           ref={inputRef}
@@ -61,7 +69,10 @@ export function UploadDialog({
             className="visually-hidden"
             type="file"
             multiple
-            {...({ webkitdirectory: "", directory: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
+            {...({
+              webkitdirectory: "",
+              directory: "",
+            } as React.InputHTMLAttributes<HTMLInputElement>)}
             onChange={(event) => {
               const files = event.target.files;
               if (files?.length) onFiles(files);
@@ -176,9 +187,7 @@ export function UploadNameConflictDialog({
             <li>{t("upload.andMore", { count: remaining })}</li>
           )}
         </ul>
-        <p className="modal-copy">
-          {t("upload.keepBothExplanation")}
-        </p>
+        <p className="modal-copy">{t("upload.keepBothExplanation")}</p>
         <div className="modal-actions upload-conflict-actions">
           <button className="secondary" type="button" onClick={onCancel}>
             {t("common.cancel")}

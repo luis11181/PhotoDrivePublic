@@ -3,7 +3,7 @@ namespace CSSApps.Api.Authentication.ApiKey;
 /// <summary>
 /// Configuration for a service API key.
 /// Maps an API key to a seeded User record in the database.
-/// User attributes (name, email, roles, permissions) come from the database, not config.
+/// User attributes (name, email, roles) come from the database, not config.
 /// </summary>
 public class ServiceApiKeyConfig
 {

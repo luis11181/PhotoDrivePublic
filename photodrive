@@ -1,79 +1,144 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+# Arch/Linux launcher. The database lives in Turso Cloud; each computer keeps a local read copy.
+# Usage: ./photodrive <command> [--environment production|development] [options]
+#
+# Commands:
+#   help           Show the usage summary.
+#   configure      Save paths/port/etc. for this environment in .photodrive/<environment>.conf, then print them.
+#   config         Print the effective settings for this environment without changing anything.
+#   build          Build the Docker image for this environment.
+#   setup          First start on a computer: create folders, build, validate, apply migrations, start.
+#   start          Start this computer's server (downloads its local database copy if missing); never migrates.
+#   stop           Stop this computer's server; other computers keep working.
+#   restart        Stop and start again without building or migrating.
+#   update         Build the current code, validate, stop, apply migrations, start.
+#   validate       Check host folders, AWS files, the image, and the app configuration; start nothing.
+#   migrate        Apply database migrations to the shared Turso database only.
+#   (import-sqlite is REMOVE-WITH-SQLITE-IMPORT.)
+#   import-sqlite  Stop PhotoDrive, then copy the old SQLite catalog/Users files once into an empty Turso database.
+#   logs           Follow the application logs.
+#   status         Show this environment's containers.
+#   health         Wait until the running server answers its /health check.
+#
+# Needs the untracked secrets.<Environment>.json next to appsettings.json (copy secrets.example.json).
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+fail() { printf 'PhotoDrive: %s\n' "$*" >&2; exit 1; }
+command= environment=production detach=0
+declare -A overrides settings
+while (($#)); do
+  case "$1" in
+    --environment) (($# >= 2)) || fail 'Missing environment'; environment=${2,,}; shift 2 ;;
+    --detach) detach=1; shift ;;
+    --data-directory|--import-directory|--aws-directory|--port|--bind-address|--project-name|--original-cache-max-bytes)
+      (($# >= 2)) || fail "Missing value for $1"
+      case "$1" in
+        --data-directory) key=DataDirectory ;; --import-directory) key=ImportDirectory ;;
+        --aws-directory) key=AwsDirectory ;; --port) key=Port ;; --bind-address) key=BindAddress ;;
+        --project-name) key=ProjectName ;; --original-cache-max-bytes) key=OriginalCacheMaxBytes ;;
+      esac
+      [[ $2 != *$'\n'* && $2 != *$'\r'* ]] || fail 'Settings cannot contain newlines'
+      overrides[$key]=$2; shift 2 ;;
+    -*) fail "Unknown option: $1" ;;
+    *) [[ -z $command ]] || fail "Unexpected argument: $1"; command=$1; shift ;;
+  esac
+done
+command=${command:-help}
+[[ $environment == production || $environment == development ]] || fail 'Environment must be production or development'
+if [[ $command == help ]]; then
+  cat <<'HELP'
+PhotoDrive for Arch/Linux (Docker)
+  ./photodrive <command> [--environment production|development] [options]
 
-cd "$(dirname "$0")"
+Everyday: setup (build, migrate, start), start, stop, update (build, migrate, restart), status, logs.
+The database lives in Turso Cloud; start downloads this computer's local copy when it is missing.
+Put the database token in the untracked secrets.<Environment>.json next to appsettings.json (copy secrets.example.json).
+Choose the primary server (metadata extraction, weekly backups) in Developer tools.
 
-require_compose() {
-  command -v docker >/dev/null 2>&1 || { printf 'Docker is required.\n' >&2; exit 1; }
-  docker compose version >/dev/null 2>&1 || { printf 'Docker Compose v2 is required.\n' >&2; exit 1; }
-}
-
-require_env() {
-  [ -f .env ] || {
-    printf 'Create .env first: cp .env.example .env\n' >&2
-    exit 1
-  }
-}
-
-migrate() {
-  docker compose run --rm --no-deps photodrive database migrate --confirm MIGRATE
-}
-
-command=${1:-help}
-case "$command" in
-  setup)
-    require_compose
-    require_env
-    docker compose --profile tools run --rm aws-setup
-    docker compose build
-    migrate
-    docker compose up --detach
-    docker compose ps
-    ;;
-  start)
-    require_compose
-    require_env
-    docker compose up --detach
-    docker compose ps
-    ;;
-  stop)
-    require_compose
-    docker compose down
-    ;;
-  update)
-    require_compose
-    require_env
-    docker compose build --pull
-    migrate
-    docker compose up --detach
-    docker compose ps
-    ;;
-  validate)
-    require_compose
-    require_env
-    docker compose run --rm --no-deps photodrive config validate
-    ;;
-  logs)
-    require_compose
-    docker compose logs --follow photodrive
-    ;;
-  status)
-    require_compose
-    docker compose ps
-    ;;
-  help|--help|-h)
-    printf '%s\n' \
-      'PhotoDrive commands:' \
-      '  ./photodrive setup     provision S3, build, migrate, and start' \
-      '  ./photodrive start     start the existing installation' \
-      '  ./photodrive stop      stop the app without deleting data' \
-      '  ./photodrive update    rebuild, migrate, and restart' \
-      '  ./photodrive validate  validate the effective configuration' \
-      '  ./photodrive logs      follow application logs' \
-      '  ./photodrive status    show container health'
-    ;;
-  *)
-    printf 'Unknown command: %s\n' "$command" >&2
-    exit 1
-    ;;
-esac
+Other: migrate, import-sqlite (one-time move of old SQLite files), build, validate,
+  restart, health, config, configure. See docs/LAUNCHERS.md.
+Settings: --data-directory, --import-directory, --aws-directory, --port,
+  --bind-address, --original-cache-max-bytes, --project-name. Configure saves them. Dev: --detach.
+HELP
+  exit 0
+fi
+case "$command" in configure|config|setup|start|stop|update|status|logs|migrate|import-sqlite|build|validate|restart|health) ;; *) fail "Unknown command: $command" ;; esac
+if ((detach)); then [[ $command == setup || $command == start || $command == update || $command == restart ]] || fail '--detach applies only to startup commands'; fi
+settings[DataDirectory]=$HOME/Data
+settings[ImportDirectory]=$HOME/Downloads
+settings[AwsDirectory]=$HOME/.aws
+settings[BindAddress]=0.0.0.0
+settings[OriginalCacheMaxBytes]=
+if [[ $environment == production ]]; then settings[Port]=60020; settings[ProjectName]=photodrive-personal; leaf=MediaExplorer; file=compose.yaml
+else settings[Port]=3000; settings[ProjectName]=photodrive-development; leaf=MediaExplorer-test; file=compose.development.yaml; fi
+settings_file=$root/.photodrive/$environment.conf
+secrets_file=$root/backend/main/DotnetBackEnd/solution/src/Hosts/CSSApps.Api/secrets.${environment^}.json
+if [[ -f $settings_file ]]; then
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ -z $line || $line == \#* ]] && continue
+    [[ $line == *=* ]] || fail "Malformed setting in $settings_file"
+    key=${line%%=*}; value=${line#*=}
+    case "$key" in DataDirectory|ImportDirectory|AwsDirectory|Port|BindAddress|OriginalCacheMaxBytes|ProjectName) settings[$key]=$value ;; *) fail "Unknown saved setting: $key" ;; esac
+  done < "$settings_file"
+fi
+for key in "${!overrides[@]}"; do settings[$key]=${overrides[$key]}; done
+for key in DataDirectory ImportDirectory AwsDirectory; do
+  [[ ${settings[$key]} == /* ]] || fail "$key must be an absolute host path"
+  settings[$key]=$(realpath -m -- "${settings[$key]}")
+done
+[[ ${settings[Port]} =~ ^[0-9]{1,5}$ ]] && ((10#${settings[Port]} > 0 && 10#${settings[Port]} < 65536)) || fail 'Port must be 1..65535'
+[[ ${settings[BindAddress]} =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail 'Bind address must be IPv4'
+IFS=. read -r -a octets <<< "${settings[BindAddress]}"
+for octet in "${octets[@]}"; do ((10#$octet <= 255)) || fail 'Invalid IPv4 address'; done
+[[ ${settings[ProjectName]} =~ ^[a-z0-9][a-z0-9_-]*$ ]] || fail 'Invalid project name'
+[[ -z ${settings[OriginalCacheMaxBytes]} || ${settings[OriginalCacheMaxBytes]} =~ ^[0-9]+$ ]] || fail 'Invalid cache budget'
+database=${settings[DataDirectory]}/Databases/$leaf
+cache=${settings[DataDirectory]}/Cache/$leaf
+if [[ $command == configure ]]; then
+  mkdir -p -- "$root/.photodrive"
+  : > "$settings_file"
+  for key in DataDirectory ImportDirectory AwsDirectory Port BindAddress OriginalCacheMaxBytes ProjectName; do printf '%s=%s\n' "$key" "${settings[$key]}" >> "$settings_file"; done
+fi
+if [[ $command == configure || $command == config ]]; then
+  printf 'Environment=%s\nDatabases=%s\nCache=%s\n' "$environment" "$database" "$cache"
+  for key in DataDirectory ImportDirectory AwsDirectory Port BindAddress OriginalCacheMaxBytes ProjectName; do printf '%s=%s\n' "$key" "${settings[$key]}"; done
+  exit 0
+fi
+health() { for ((i=0; i<120; i++)); do if curl --fail --silent --max-time 2 "http://127.0.0.1:${settings[Port]}/health" >/dev/null; then printf 'PhotoDrive %s is healthy on port %s\n' "$environment" "${settings[Port]}"; return; fi; sleep 1; done; fail 'Health check failed; inspect logs'; }
+[[ $command != health ]] || { health; exit; }
+[[ $(docker info --format '{{.OSType}}' 2>/dev/null) == linux ]] || fail 'Start Docker with Linux containers and Compose v2'
+# Secrets (the Turso database token) live in the untracked secrets.<Environment>.json next to the other host settings.
+[[ -f $secrets_file ]] || fail "Missing $secrets_file. Copy secrets.example.json next to it, rename it, and add the Turso database token"
+export PHOTODRIVE_SECRETS_FILE=$secrets_file PHOTODRIVE_HOST_NAME=$(hostname)
+export PHOTODRIVE_DATABASE_DIRECTORY=$database PHOTODRIVE_CACHE_DIRECTORY=$cache
+export PHOTODRIVE_IMPORT_DIRECTORY=${settings[ImportDirectory]} PHOTODRIVE_IMPORT_TARGET=/imports/source
+export PHOTODRIVE_AWS_DIRECTORY=${settings[AwsDirectory]} PHOTODRIVE_PORT=${settings[Port]} PHOTODRIVE_BIND_ADDRESS=${settings[BindAddress]}
+export PHOTODRIVE_REVERSE_PROXY_ENABLED=true PHOTODRIVE_TMPFS_SIZE=8g PHOTODRIVE_SHM_SIZE=512m
+export PHOTODRIVE_UID=$(id -u) PHOTODRIVE_GID=$(id -g)
+if [[ -n ${settings[OriginalCacheMaxBytes]} ]]; then export MediaStorage__LocalDisk__OriginalCacheMaxBytes=${settings[OriginalCacheMaxBytes]}; else unset MediaStorage__LocalDisk__OriginalCacheMaxBytes; fi
+compose=(docker compose --project-directory "$root" --project-name "${settings[ProjectName]}" --file "$root/$file")
+image=photodrive-personal:local; [[ $environment == production ]] || image=photodrive-development:local
+case "$command" in stop) "${compose[@]}" stop; exit ;; status) "${compose[@]}" ps --all; exit ;; logs) "${compose[@]}" logs --follow --tail 100; exit ;; build) "${compose[@]}" build; exit ;; esac
+[[ $command != setup ]] || mkdir -p -- "$database" "$cache" "${settings[ImportDirectory]}"
+for directory in "$database" "$cache" "${settings[ImportDirectory]}" "${settings[AwsDirectory]}"; do [[ -d $directory ]] || fail "Missing host directory: $directory"; done
+for name in config credentials; do [[ -f ${settings[AwsDirectory]}/$name ]] || fail "Missing AWS $name file"; done
+if [[ $command == setup || $command == update ]]; then "${compose[@]}" build; fi
+docker image inspect "$image" >/dev/null || fail 'Build the environment image first'
+"${compose[@]}" run --rm --no-deps -T photodrive config validate
+[[ $command != validate ]] || exit 0
+if [[ $command == restart || $command == update ]]; then "${compose[@]}" stop; fi
+# REMOVE-WITH-SQLITE-IMPORT: part of the one-time v1 (SQLite) to v2 (Turso) import. Development was imported on 2026-11-09 and Production on 2026-11-10; delete it once the v1 files are no longer kept (search the repo for this marker).
+if [[ $command == import-sqlite ]]; then
+  # One-time copy of the previous two-file SQLite library (read-only) into an empty Turso database.
+  for name in media-explorer.catalog.db media-explorer.users.db; do [[ -f $database/$name ]] || fail "import-sqlite needs $name in $database"; done
+  # The running (old) app must not keep writing to the files while they are copied.
+  "${compose[@]}" stop
+  "${compose[@]}" run --rm --no-deps -T photodrive database import-sqlite --catalog /data/databases/media-explorer.catalog.db --users /data/databases/media-explorer.users.db --confirm IMPORT
+  exit
+fi
+if [[ $command == setup || $command == update || $command == migrate ]]; then
+  "${compose[@]}" run --rm --no-deps -T photodrive database migrate --confirm MIGRATE
+fi
+[[ $command != migrate ]] || exit 0
+if [[ $environment == production || $detach == 1 ]]; then "${compose[@]}" up --detach --no-build; health
+else printf 'Starting Development; Ctrl+C stops it.\n'; "${compose[@]}" up --no-build --abort-on-container-exit; fi

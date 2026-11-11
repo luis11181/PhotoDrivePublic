@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   Album,
+  HardDrive,
   Folder,
   FolderInput,
   Github,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import type { StorageSummary } from "@/lib/api";
 import { PreferenceControls } from "@/components/preference-controls";
-import { formatBytes, formatNumber } from "@/lib/formatting";
+import { formatBytes } from "@/lib/formatting";
 import { usePreferences } from "@/lib/preferences";
 import type { TranslationKey } from "@/lib/translations";
 import type { LibraryView, MediaItem } from "@/lib/types";
@@ -66,7 +67,7 @@ export function LibrarySidebar({
   quickAccessFolders = [],
   quickAccessLoading = false,
 }: {
-  view: LibraryView | "imports" | "developer" | "users";
+  view: LibraryView | "imports" | "developer" | "users" | "storage";
   open: boolean;
   onClose: () => void;
   storageSummary?: StorageSummary;
@@ -77,7 +78,7 @@ export function LibrarySidebar({
   quickAccessFolders?: MediaItem[];
   quickAccessLoading?: boolean;
 }) {
-  const { locale, t } = usePreferences();
+  const { t } = usePreferences();
 
   return (
     <aside className={`sidebar ${open ? "sidebar-open" : ""}`}>
@@ -145,48 +146,6 @@ export function LibrarySidebar({
         </section>
       )}
 
-      <div className="sidebar-spacer" />
-      <section className="storage-card" aria-label={t("sidebar.storageUsage")}>
-        <div>
-          <span>{t("sidebar.storageUsed")}</span>
-          <button
-            className="storage-refresh"
-            aria-label={t("sidebar.refreshStorage")}
-            disabled={storageRefreshing}
-            onClick={onRefreshStorage}
-            title={t("sidebar.refreshStorage")}
-            type="button"
-          >
-            <RefreshCw className={storageRefreshing ? "spin" : ""} />
-          </button>
-        </div>
-        {storageLoading && !storageSummary ? (
-          <p>{t("sidebar.loadingStorage")}</p>
-        ) : storageSummary ? (
-          <>
-            <strong>{formatBytes(storageSummary.storedOriginalBytes)}</strong>
-            <p>
-              {t("sidebar.fileCount", {
-                count: formatNumber(storageSummary.catalogFileCount, locale),
-              })}
-            </p>
-            <p>
-              {t("sidebar.includesTrash", {
-                count: formatNumber(storageSummary.uniqueOriginalCount, locale),
-              })}
-            </p>
-            {storageSummary.reclaimableTrashBytes > 0 && (
-              <p>
-                {t("sidebar.clearTrashCanFree", {
-                  size: formatBytes(storageSummary.reclaimableTrashBytes),
-                })}
-              </p>
-            )}
-          </>
-        ) : (
-          <p>{t("sidebar.storageUnavailable")}</p>
-        )}
-      </section>
       <nav
         className="sidebar-utility-nav"
         aria-label={t("sidebar.toolsAndSettings")}
@@ -200,15 +159,18 @@ export function LibrarySidebar({
           <Trash2 />
           <span>{t("sidebar.trash")}</span>
         </Link>
-        <Link
-          className={`nav-item ${view === "imports" ? "active" : ""}`}
-          href="/imports"
-          onClick={onClose}
-          aria-current={view === "imports" ? "page" : undefined}
-        >
-          <FolderInput />
-          <span>{t("sidebar.imports")}</span>
-        </Link>
+        {isOwner && <p className="nav-label">{t("sidebar.administration")}</p>}
+        {isOwner && (
+          <Link
+            className={`nav-item ${view === "imports" ? "active" : ""}`}
+            href="/imports"
+            onClick={onClose}
+            aria-current={view === "imports" ? "page" : undefined}
+          >
+            <FolderInput />
+            <span>{t("sidebar.imports")}</span>
+          </Link>
+        )}
         {isOwner && (
           <Link
             className={`nav-item ${view === "users" ? "active" : ""}`}
@@ -241,6 +203,15 @@ export function LibrarySidebar({
           <span>{t("sidebar.sourceLicense")}</span>
         </a>
       </nav>
+
+      <div className="sidebar-spacer" />
+      <div className="storage-compact">
+        <Link className={view === "storage" ? "active" : ""} href="/storage" onClick={onClose} aria-current={view === "storage" ? "page" : undefined}>
+          <HardDrive size={17} /><span>{t("sidebar.storage")}</span>
+          <strong>{storageSummary ? formatBytes(storageSummary.storedOriginalBytes) : storageLoading ? "…" : "—"}</strong>
+        </Link>
+        <button className="storage-refresh" aria-label={t("sidebar.refreshStorage")} disabled={storageRefreshing} onClick={onRefreshStorage} type="button"><RefreshCw className={storageRefreshing ? "spin" : ""} /></button>
+      </div>
     </aside>
   );
 }

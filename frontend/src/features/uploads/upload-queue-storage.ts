@@ -26,7 +26,7 @@ export type StoredUpload = {
   checksum?: string;
   catalogItemId?: string;
   duplicateState?: "none" | "active" | "trashed";
-  errorCode?: "offline" | "name_conflict" | "storage" | "upload";
+  errorCode?: "offline" | "name_conflict" | "storage" | "upload" | "album";
   error?: string;
   createdAt: string;
   updatedAt: string;

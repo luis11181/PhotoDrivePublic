@@ -1,0 +1,20 @@
+name: photodrive-windows
+
+# Production on Windows. Preserve the existing project/network identity.
+services:
+  photodrive:
+    extends:
+      file: compose.runtime.yaml
+      service: photodrive
+    restart: always
+    environment:
+      MediaStorage__LocalDisk__BackupRetainedSnapshotCount: "10"
+      ReverseProxy__Enabled: "false"
+      AccessControl__IpAllowlist__AllowedNetworks__5: 172.31.250.32/28
+    networks: [photodrive-windows]
+
+networks:
+  photodrive-windows:
+    ipam:
+      config:
+        - subnet: 172.31.250.32/28

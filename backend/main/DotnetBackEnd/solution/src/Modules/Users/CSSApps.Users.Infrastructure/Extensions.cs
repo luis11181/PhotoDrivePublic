@@ -1,4 +1,5 @@
 using CSSApps.Users.Application.Interfaces;
+using CSSApps.Shared.Infrastructure.Data.Turso;
 using CSSApps.Users.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -15,16 +16,13 @@ public static class Extensions
    public static IServiceCollection AddInfrastructureLayerServices(this IServiceCollection services,
        IConfiguration configuration, IHostEnvironment environment)
    {
-      #region EF Core SQLite database
+      #region EF Core database (shared Turso database)
 
-      var dbConnectionString = configuration.GetConnectionString("UsersModule") ??
-                               throw new InvalidOperationException("Db connection string not found");
+      services.AddTursoDatabase(configuration);
+      services.AddDbContext<UsersDbContext>((provider, options) => provider.GetRequiredService<TursoDatabase>()
+          .Configure(options, provider.GetRequiredService<DatabaseRoute>().Kind, TursoDatabase.UsersHistoryTable, provider.GetRequiredService<CloudConnectionLease>()));
 
-      // Register ModuleA DbContext
-      services.AddDbContext<UsersDbContext>(options =>
-          options.UseSqlite(dbConnectionString));
-
-      //! injecting the IAppDbContext interface in case we want to isolate the dbcontext from the application layer
+      //! injecting the IAppDbContext interface in case we want to isolate the dbcontext from the application layer 
       services.AddScoped<IUsersDbContext>(provider => provider.GetRequiredService<UsersDbContext>());
 
       services
@@ -39,8 +37,8 @@ public static class Extensions
       services.AddServices();
       services.AddScoped<UsersDataSeeder>();
 
-      // Register Claims Transformation, Automatically runs on every authenticated request Loads user's roles and permissions from database
-      services.AddTransient<IClaimsTransformation, AddUserPermissionsClaimsTransformation>();
+      // Adds role claims (Owner/Member) on every authenticated request; see AddUserRolesClaimsTransformation.
+      services.AddTransient<IClaimsTransformation, AddUserRolesClaimsTransformation>();
 
       //add typed HTTP clients
 

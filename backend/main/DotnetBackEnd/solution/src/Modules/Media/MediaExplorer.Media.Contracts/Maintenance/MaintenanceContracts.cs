@@ -45,7 +45,6 @@ public sealed class DeveloperBackupReportRes
     public long FileVersionMetadataCount { get; init; }
     public long UserCount { get; init; }
     public long RoleCount { get; init; }
-    public long PermissionCount { get; init; }
     public long UserSessionCount { get; init; }
     public long UserTokenCount { get; init; }
     public string? RemoteBackupSetId { get; init; }
@@ -81,6 +80,11 @@ public sealed class DeveloperOperationalHealthRes
     public long OriginalCacheMaxBytes { get; init; }
     public bool LowDiskSpace { get; init; }
     public bool CachePressure { get; init; }
+    /// <summary>Whether this host runs installation-wide background work (metadata extraction, scheduled backups).</summary>
+    public bool IsPrimaryHost { get; init; }
+    /// <summary>Last successful pull of this host's local database replica; null for a local test database.</summary>
+    public DateTimeOffset? DatabaseLastPullAt { get; init; }
+    public DateTimeOffset? DatabaseLastCloudFailureAt { get; init; }
     public IReadOnlyList<DeveloperMaintenanceIssueRes> Issues { get; init; } = [];
 }
 
@@ -117,4 +121,30 @@ public sealed class DeveloperMaintenanceIssueRes
     public string Severity { get; init; } = null!;
     public string Code { get; init; } = null!;
     public string Message { get; init; } = null!;
+}
+
+/// <summary>The PhotoDrive hosts sharing this installation's database.</summary>
+public sealed class ClusterHostsRes
+{
+    public Guid CurrentHostId { get; init; }
+    public Guid? PrimaryHostId { get; init; }
+    public DateTime? PrimaryChangedAt { get; init; }
+    public IReadOnlyList<ClusterHostRes> Hosts { get; init; } = [];
+}
+
+public sealed class ClusterHostRes
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = null!;
+    public DateTime FirstSeenAt { get; init; }
+    public DateTime LastSeenAt { get; init; }
+    /// <summary>The host sent a heartbeat within the last few minutes.</summary>
+    public bool Online { get; init; }
+    public bool IsCurrent { get; init; }
+    public bool IsPrimary { get; init; }
+}
+
+public sealed class SetPrimaryHostReq
+{
+    public Guid HostId { get; init; }
 }

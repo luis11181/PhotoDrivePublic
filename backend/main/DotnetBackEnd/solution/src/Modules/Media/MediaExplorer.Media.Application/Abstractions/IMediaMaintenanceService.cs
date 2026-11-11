@@ -10,4 +10,6 @@ public interface IMediaMaintenanceService
     Task<Result<DeveloperOperationalHealthRes>> GetOperationalHealthAsync(CancellationToken cancellationToken);
     Task<Result<DeveloperBackupReportRes>> BackupAsync(CancellationToken cancellationToken);
     Task<Result<CleanupStorageInconsistenciesRes>> CleanupAsync(CleanupStorageInconsistenciesReq request, CancellationToken cancellationToken);
+    Task<Result<ClusterHostsRes>> GetHostsAsync(CancellationToken cancellationToken);
+    Task<Result<ClusterHostsRes>> SetPrimaryHostAsync(Guid userId, SetPrimaryHostReq request, CancellationToken cancellationToken);
 }

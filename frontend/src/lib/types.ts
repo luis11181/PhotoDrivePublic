@@ -77,6 +77,9 @@ export interface ItemShare {
   sharedAt: string;
 }
 
+export type AlbumShareRole = "viewer" | "collaborator";
+export type AlbumShare = Omit<ItemShare, "role"> & { role: AlbumShareRole };
+
 export interface Album {
   id: string;
   name: string;
@@ -86,7 +89,7 @@ export interface Album {
   coverFileIds: string[];
   createdAt: string;
   modifiedAt: string;
-  accessRole: "owner" | "viewer";
+  accessRole: "owner" | AlbumShareRole;
   sharedByDisplayName?: string;
   sharedAt?: string;
 }

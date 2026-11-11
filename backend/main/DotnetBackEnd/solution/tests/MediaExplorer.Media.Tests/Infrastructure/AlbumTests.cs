@@ -14,6 +14,129 @@ namespace MediaExplorer.Media.Tests.Infrastructure;
 public sealed class AlbumTests
 {
     [Fact]
+    public async Task Collaborators_contribute_owned_media_and_remove_any_member_without_gaining_file_ownership()
+    {
+        await using var harness = new MediaTestHarness();
+        await harness.InitializeAsync();
+        var ownerId = Guid.NewGuid();
+        var collaboratorId = Guid.NewGuid();
+        var viewerId = Guid.NewGuid();
+        var outsiderId = Guid.NewGuid();
+        await using var dbContext = harness.CreateDbContext();
+        var catalog = harness.CreateResultService(dbContext);
+        var ownerFile = await UploadPhotoAsync(catalog, dbContext, ownerId, "owner.jpg");
+        var contribution = await UploadPhotoAsync(catalog, dbContext, collaboratorId, "contribution.jpg");
+        var privateFile = await UploadPhotoAsync(catalog, dbContext, collaboratorId, "private.jpg");
+        var outsiderFile = await UploadPhotoAsync(catalog, dbContext, outsiderId, "outsider.jpg");
+        var privateTag = new Tag
+        {
+            LibraryId = (await dbContext.Files.SingleAsync(file => file.Id == contribution.Id)).LibraryId,
+            Name = "Private label", NormalizedName = "PRIVATE LABEL", Color = "green", CreatedByUserId = collaboratorId
+        };
+        dbContext.Tags.Add(privateTag);
+        dbContext.FileTags.Add(new FileTag { FileId = contribution.Id, TagId = privateTag.Id, AddedByUserId = collaboratorId });
+        await dbContext.SaveChangesAsync();
+        var directory = new TestDirectory(
+            new ShareRecipientProfile(collaboratorId, "Contributor", "contributor@example.test"),
+            new ShareRecipientProfile(viewerId, "Viewer", "viewer@example.test"));
+        var albums = new AlbumService(dbContext, new LibraryBootstrapper(dbContext), directory, NullLogger<AlbumService>.Instance);
+        var album = (await albums.CreateAsync(ownerId, new CreateAlbumReq { Name = "Together" }, default)).SuccessValue;
+        (await albums.AddItemAsync(ownerId, album.Id, ownerFile.Id, default)).IsSuccess.Should().BeTrue();
+        (await albums.SetShareAsync(ownerId, album.Id, collaboratorId, new SetItemShareReq { Role = "collaborator" }, default)).IsSuccess.Should().BeTrue();
+        (await albums.SetShareAsync(ownerId, album.Id, viewerId, new SetItemShareReq(), default)).IsSuccess.Should().BeTrue();
+
+        (await albums.ListAsync(collaboratorId, "shared", default)).SuccessValue.Albums.Should()
+            .ContainSingle(candidate => candidate.Id == album.Id && candidate.AccessRole == "collaborator");
+        (await albums.AddItemAsync(collaboratorId, album.Id, contribution.Id, default)).IsSuccess.Should().BeTrue();
+        (await albums.AddItemAsync(collaboratorId, album.Id, contribution.Id, default)).IsSuccess.Should().BeTrue();
+        (await dbContext.AlbumItems.SingleAsync(member => member.FileId == contribution.Id)).AddedByUserId.Should().Be(collaboratorId);
+        (await albums.AddItemAsync(collaboratorId, album.Id, outsiderFile.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.AddItemAsync(viewerId, album.Id, privateFile.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.RemoveItemAsync(viewerId, album.Id, ownerFile.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.SetItemsAsync(viewerId, album.Id, new SetAlbumItemsReq { ItemIds = [ownerFile.Id], Included = false }, default)).IsFailure.Should().BeTrue();
+        (await albums.GetAsync(outsiderId, album.Id, new BrowseAlbumItemsReq(), default)).IsFailure.Should().BeTrue();
+        (await catalog.GetItemAsync(ownerId, privateFile.Id, default)).IsFailure.Should().BeTrue();
+
+        var ownerView = (await albums.GetAsync(ownerId, album.Id, new BrowseAlbumItemsReq(), default)).SuccessValue;
+        ownerView.Items.Single(item => item.Id == contribution.Id).Capabilities.CanTrash.Should().BeFalse();
+        ownerView.Items.Single(item => item.Id == contribution.Id).Tags.Should().BeEmpty();
+        (await albums.GetAsync(ownerId, album.Id, new BrowseAlbumItemsReq { Query = "Private label" }, default)).SuccessValue.Items.Should().BeEmpty();
+        var contributorView = (await albums.GetAsync(collaboratorId, album.Id, new BrowseAlbumItemsReq(), default)).SuccessValue;
+        contributorView.Items.Single(item => item.Id == ownerFile.Id).Capabilities.CanTrash.Should().BeFalse();
+        contributorView.Items.Single(item => item.Id == contribution.Id).AccessRole.Should().Be("owner");
+        contributorView.Items.Single(item => item.Id == contribution.Id).Tags.Should().ContainSingle(tag => tag.Id == privateTag.Id);
+        using ((await catalog.OpenContentAsync(ownerId, contribution.Id, null, null, default)).SuccessValue) { }
+        using ((await catalog.OpenContentAsync(viewerId, contribution.Id, null, null, default)).SuccessValue) { }
+        using ((await catalog.OpenContentAsync(collaboratorId, ownerFile.Id, null, null, default)).SuccessValue) { }
+        (await catalog.PreviewAlbumDownloadAsync(collaboratorId, album.Id, default)).SuccessValue.FileCount.Should().Be(2);
+        (await catalog.TrashItemAsync(collaboratorId, ownerFile.Id, default)).IsFailure.Should().BeTrue();
+        (await catalog.TrashItemAsync(ownerId, contribution.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.UpdateAsync(collaboratorId, album.Id, new UpdateAlbumReq { Name = "No" }, default)).IsFailure.Should().BeTrue();
+        (await albums.DeleteAsync(collaboratorId, album.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.ListSharesAsync(collaboratorId, album.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.SetShareAsync(collaboratorId, album.Id, viewerId, new SetItemShareReq { Role = "collaborator" }, default)).IsFailure.Should().BeTrue();
+        (await albums.RevokeShareAsync(collaboratorId, album.Id, viewerId, default)).IsFailure.Should().BeTrue();
+
+        (await albums.RemoveItemAsync(collaboratorId, album.Id, ownerFile.Id, default)).IsSuccess.Should().BeTrue();
+        (await albums.RemoveItemAsync(collaboratorId, album.Id, ownerFile.Id, default)).IsSuccess.Should().BeTrue();
+        (await albums.AddItemAsync(ownerId, album.Id, ownerFile.Id, default)).IsSuccess.Should().BeTrue();
+
+        var removed = (await albums.SetItemsAsync(collaboratorId, album.Id, new SetAlbumItemsReq
+        {
+            ItemIds = [ownerFile.Id, contribution.Id, outsiderFile.Id], Included = false
+        }, default)).SuccessValue;
+        removed.SucceededCount.Should().Be(2);
+        removed.FailedCount.Should().Be(1);
+        (await catalog.GetItemAsync(collaboratorId, ownerFile.Id, default)).IsFailure.Should().BeTrue();
+        (await catalog.GetItemAsync(ownerId, contribution.Id, default)).IsFailure.Should().BeTrue();
+        (await catalog.GetItemAsync(viewerId, contribution.Id, default)).IsFailure.Should().BeTrue();
+        (await catalog.GetItemAsync(ownerId, ownerFile.Id, default)).IsSuccess.Should().BeTrue();
+        (await catalog.GetItemAsync(collaboratorId, contribution.Id, default)).IsSuccess.Should().BeTrue();
+        (await dbContext.Files.CountAsync()).Should().Be(4);
+    }
+
+    [Fact]
+    public async Task Album_role_changes_and_revocation_take_effect_immediately_and_keep_contributions()
+    {
+        await using var harness = new MediaTestHarness();
+        await harness.InitializeAsync();
+        var ownerId = Guid.NewGuid();
+        var recipientId = Guid.NewGuid();
+        await using var dbContext = harness.CreateDbContext();
+        var catalog = harness.CreateResultService(dbContext);
+        var file = await UploadPhotoAsync(catalog, dbContext, recipientId, "shared.jpg");
+        var other = await UploadPhotoAsync(catalog, dbContext, recipientId, "other.jpg");
+        var directory = new TestDirectory(new ShareRecipientProfile(recipientId, "Recipient", "recipient@example.test"));
+        var albums = new AlbumService(dbContext, new LibraryBootstrapper(dbContext), directory, NullLogger<AlbumService>.Instance);
+        var album = (await albums.CreateAsync(ownerId, new CreateAlbumReq { Name = "Roles" }, default)).SuccessValue;
+        var sharing = new SharingService(dbContext, new CatalogAuthorization(dbContext), directory, NullLogger<SharingService>.Instance);
+        (await sharing.SetItemShareAsync(recipientId, file.Id, ownerId, new SetItemShareReq { Role = "collaborator" }, default)).IsFailure.Should().BeTrue();
+        (await albums.SetShareAsync(ownerId, album.Id, recipientId, new SetItemShareReq { Role = "editor" }, default)).IsFailure.Should().BeTrue();
+        (await albums.SetShareAsync(ownerId, album.Id, ownerId, new SetItemShareReq { Role = "collaborator" }, default)).IsFailure.Should().BeTrue();
+        (await albums.SetShareAsync(ownerId, album.Id, recipientId, new SetItemShareReq(), default)).IsSuccess.Should().BeTrue();
+        (await albums.AddItemAsync(recipientId, album.Id, file.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.SetShareAsync(ownerId, album.Id, recipientId, new SetItemShareReq { Role = " COLLABORATOR " }, default)).SuccessValue.Role.Should().Be("collaborator");
+        var added = (await albums.SetItemsAsync(recipientId, album.Id, new SetAlbumItemsReq
+        {
+            ItemIds = [file.Id], Included = true
+        }, default)).SuccessValue;
+        added.SucceededCount.Should().Be(1);
+        (await albums.SetShareAsync(ownerId, album.Id, recipientId, new SetItemShareReq(), default)).IsSuccess.Should().BeTrue();
+        (await albums.GetAsync(recipientId, album.Id, new BrowseAlbumItemsReq(), default)).SuccessValue.Album.AccessRole.Should().Be("viewer");
+        (await albums.AddItemAsync(recipientId, album.Id, other.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.RemoveItemAsync(recipientId, album.Id, file.Id, default)).IsFailure.Should().BeTrue();
+        (await albums.RevokeShareAsync(ownerId, album.Id, recipientId, default)).IsSuccess.Should().BeTrue();
+        (await albums.GetAsync(recipientId, album.Id, new BrowseAlbumItemsReq(), default)).IsFailure.Should().BeTrue();
+        (await albums.ListAsync(recipientId, "shared", default)).SuccessValue.Albums.Should().BeEmpty();
+        (await albums.SetItemsAsync(recipientId, album.Id, new SetAlbumItemsReq { ItemIds = [file.Id], Included = false }, default)).IsFailure.Should().BeTrue();
+        using ((await catalog.OpenContentAsync(ownerId, file.Id, null, null, default)).SuccessValue) { }
+        (await dbContext.AlbumItems.CountAsync()).Should().Be(1);
+        (await albums.RemoveItemAsync(ownerId, album.Id, file.Id, default)).IsSuccess.Should().BeTrue();
+        (await catalog.GetItemAsync(ownerId, file.Id, default)).IsFailure.Should().BeTrue();
+        (await catalog.GetItemAsync(recipientId, file.Id, default)).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Trash_preview_reports_Photos_and_distinct_album_impact_without_changing_membership()
     {
         await using var harness = new MediaTestHarness();
@@ -61,7 +184,7 @@ public sealed class AlbumTests
         var shared = (await albums.GetAsync(recipientId, album.Id, new BrowseAlbumItemsReq(), default)).SuccessValue;
         shared.Album.AccessRole.Should().Be("viewer");
         shared.Items.Should().ContainSingle(item => item.Id == file.Id && item.AccessRole == "viewer");
-        (await catalog.OpenContentAsync(recipientId, file.Id, null, null, default)).IsSuccess.Should().BeTrue();
+        using ((await catalog.OpenContentAsync(recipientId, file.Id, null, null, default)).SuccessValue) { }
         (await albums.UpdateAsync(recipientId, album.Id, new UpdateAlbumReq { Name = "Nope" }, default)).ErrorValue.ErrorCode.Should().Be(MediaErrors.NotFoundCode);
 
         (await albums.RemoveItemAsync(ownerId, album.Id, file.Id, default)).IsSuccess.Should().BeTrue();

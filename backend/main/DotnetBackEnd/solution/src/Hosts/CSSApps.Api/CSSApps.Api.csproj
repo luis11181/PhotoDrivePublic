@@ -3,7 +3,7 @@
     <PropertyGroup>
         <AddRazorSupportForMvc>false</AddRazorSupportForMvc>
     </PropertyGroup>
-
+    
     <ItemGroup>
         <ProjectReference Include="..\..\Modules\Media\MediaExplorer.Media.Api\MediaExplorer.Media.Api.csproj" />
         <ProjectReference Include="..\..\Modules\Media\MediaExplorer.Media.Infrastructure\MediaExplorer.Media.Infrastructure.csproj" />
@@ -20,6 +20,13 @@
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- REMOVE-WITH-SQLITE-IMPORT: added so LegacySqliteImportTests can reach the internal import class; remove it with the import unless another test needs internals by then. -->
+        <InternalsVisibleTo Include="MediaExplorer.Media.Tests" />
+        <Content Update="deployment.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+        <Content Update="deployment.Development.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

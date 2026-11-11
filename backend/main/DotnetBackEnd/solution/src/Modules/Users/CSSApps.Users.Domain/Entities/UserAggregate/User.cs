@@ -37,7 +37,7 @@ public class User : AuditableEntity, IAggregateRoot
     public bool MustChangePassword { get; private set; }
     public bool IsServiceAccount { get; private set; }
     public Guid SecurityStamp { get; private set; }
-
+   
     public string Email { get; private set; } = null!;
 
     public PersonName Name { get; private set; } = null!;
@@ -180,11 +180,6 @@ public class User : AuditableEntity, IAggregateRoot
         return Result.Success();
     }
 
-    public bool HasPermission(string permissionName)
-    {
-        return _roles.Any(r => r.Permissions.Any(p => p.Name == permissionName));
-    }
-
     public string? GetOAuthProviderId(string provider)
     {
         return provider == OAuthProvider ? OAuthProviderId : null;
@@ -194,7 +189,7 @@ public class User : AuditableEntity, IAggregateRoot
     {
         if (string.IsNullOrWhiteSpace(passwordHash))
             return new ResultError("Password hash cannot be empty");
-
+        
         PasswordHash = passwordHash;
         MustChangePassword = false;
         RotateSecurityStamp();
@@ -310,10 +305,10 @@ public class User : AuditableEntity, IAggregateRoot
         {
             if (OAuthProvider == provider && OAuthProviderId == providerId)
                 return Result.Success(); // Already linked to this exact account
-
+            
             if (OAuthProvider == provider)
                 return new ResultError($"Account is already linked to a different {provider} account");
-
+            
             // Note: If you want to support multiple OAuth providers per user in the future,
             // you'd need a separate OAuthLink entity. For now, one provider per user.
             return new ResultError($"Account is already linked to {OAuthProvider}");
@@ -322,7 +317,7 @@ public class User : AuditableEntity, IAggregateRoot
         OAuthProvider = provider;
         OAuthProviderId = providerId;
         RotateSecurityStamp();
-
+        
         return Result.Success();
     }
 

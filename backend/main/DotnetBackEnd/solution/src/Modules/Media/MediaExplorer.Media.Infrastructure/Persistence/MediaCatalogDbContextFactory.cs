@@ -1,4 +1,5 @@
 using CSSApps.Shared.Infrastructure.Data.DesignTime;
+using CSSApps.Shared.Infrastructure.Data.Turso;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -8,9 +9,8 @@ public sealed class MediaCatalogDbContextFactory : IDesignTimeDbContextFactory<M
 {
     public MediaCatalogDbContext CreateDbContext(string[] args)
     {
-        var connectionString = DesignTimeDbContextFactorySupport.GetRequiredConnectionString("MediaCatalog");
         var options = new DbContextOptionsBuilder<MediaCatalogDbContext>()
-            .UseSqlite(connectionString)
+            .UseTurso(DesignTimeDbContextFactorySupport.LocalConnectionString(), sqlite => sqlite.MigrationsHistoryTable(TursoDatabase.MediaHistoryTable))
             .Options;
         return new MediaCatalogDbContext(options);
     }

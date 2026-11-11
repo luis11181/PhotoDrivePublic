@@ -1,0 +1,9 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0
+ENV DEBIAN_FRONTEND=noninteractive ASPNETCORE_ENVIRONMENT=Development
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ffmpeg file imagemagick tzdata \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /work
+# Source is mounted read-only at /source. /work can be a volume that keeps bin/obj between runs (see
+# scripts/test-backend-docker.ps1): old sources are removed first, so only changed projects are recompiled.
+CMD ["bash", "-ec", "find /work -type f -not -path '*/bin/*' -not -path '*/obj/*' -delete; tar -C /source --exclude=bin --exclude=obj --exclude=Logs -cf - . | tar -C /work -xf -; dotnet test tests/MediaExplorer.Media.Tests/MediaExplorer.Media.Tests.csproj --logger 'console;verbosity=minimal'"]

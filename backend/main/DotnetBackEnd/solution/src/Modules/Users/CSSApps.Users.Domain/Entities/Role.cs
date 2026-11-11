@@ -11,8 +11,6 @@ namespace CSSApps.Users.Domain.Entities.UserAggregate;
 /// </summary>
 public class Role : AuditableEntity, IAggregateRoot
 {
-    private readonly List<Permission> _permissions = [];
-
     private readonly List<User> _users = [];
 
     protected Role()
@@ -30,7 +28,6 @@ public class Role : AuditableEntity, IAggregateRoot
 
     public string Name { get; private set; } = null!;
     public string? Description { get; private set; }
-    public IReadOnlyCollection<Permission> Permissions => _permissions.AsReadOnly();
 
     // Navigation property for EF Core - not exposed as business logic
     internal IReadOnlyCollection<User> Users => _users.AsReadOnly();
@@ -42,28 +39,6 @@ public class Role : AuditableEntity, IAggregateRoot
 
         var role = new Role(name, description, id);
         return role;
-    }
-
-    public Result AddPermission(Permission permission)
-    {
-        if (permission is null)
-            return new ResultError("Permission cannot be null");
-
-        if (!_permissions.Contains(permission))
-        {
-            _permissions.Add(permission);
-        }
-
-        return Result.Success();
-    }
-
-    public Result RemovePermission(Permission permission)
-    {
-        if (permission is null)
-            return new ResultError("Permission cannot be null");
-
-        _permissions.Remove(permission);
-        return Result.Success();
     }
 
     public Result UpdateDescription(string? description)

@@ -87,7 +87,7 @@ internal sealed class GoogleOAuthService
             using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(_config.UserInfoUrl));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             using var response = await _httpClient.SendAsync(request);
-
+            
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("[users.oauth] Failed to fetch Google user profile. Status: {StatusCode}, Reason: {ReasonPhrase}",
@@ -96,7 +96,7 @@ internal sealed class GoogleOAuthService
             }
 
             var content = await response.Content.ReadAsStringAsync();
-
+            
             if (string.IsNullOrWhiteSpace(content))
             {
                 _logger.LogWarning("[users.oauth] Empty response received from Google UserInfo API");

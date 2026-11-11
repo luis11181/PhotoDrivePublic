@@ -15,6 +15,8 @@ public sealed class ImportJob
     public string SourceKind { get; set; } = GoogleTakeoutSourceKind;
     public string SourcePath { get; set; } = null!;
     public string NameConflictPolicy { get; set; } = "skip";
+    /// <summary>The host whose import inbox holds the source files; only that host processes the job.</summary>
+    public Guid? HostId { get; set; }
     public string State { get; set; } = RunningState;
     public int OrphanSidecarCount { get; set; }
     public int IgnoredJsonCount { get; set; }

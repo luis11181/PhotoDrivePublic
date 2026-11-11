@@ -11,6 +11,8 @@ public sealed class CacheBuildJob
 
     public Guid Id { get; set; } = Guid.CreateVersion7();
     public Guid RequestedByUserId { get; set; }
+    /// <summary>The host whose local cache this job fills; only that host processes it.</summary>
+    public Guid? HostId { get; set; }
     public bool KeepOriginals { get; set; } = true;
     public string State { get; set; } = PendingState;
     public int SelectedItemCount { get; set; }

@@ -11,6 +11,8 @@ import type {
   PhotoTimelineAnchors,
   ShareRecipient,
   ItemShare,
+  AlbumShare,
+  AlbumShareRole,
   Album,
   AlbumDetails,
   AlbumItemFilters,
@@ -46,6 +48,8 @@ type CompleteUploadResponse = {
 };
 
 export type UploadDestination = {
+  albumId?: string;
+  albumName?: string;
   parentId?: string;
   useDefaultMediaFolder?: boolean;
   useDefaultDocumentsFolder?: boolean;
@@ -139,7 +143,27 @@ export type DeveloperOperationalHealth = {
   originalCacheMaxBytes: number;
   lowDiskSpace: boolean;
   cachePressure: boolean;
+  isPrimaryHost: boolean;
+  databaseLastPullAt?: string;
+  databaseLastCloudFailureAt?: string;
   issues: DeveloperMaintenanceReport["issues"];
+};
+
+export type ClusterHost = {
+  id: string;
+  name: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  online: boolean;
+  isCurrent: boolean;
+  isPrimary: boolean;
+};
+
+export type ClusterHosts = {
+  currentHostId: string;
+  primaryHostId?: string;
+  primaryChangedAt?: string;
+  hosts: ClusterHost[];
 };
 
 export type CleanupStorageInconsistenciesResult = {
@@ -318,6 +342,19 @@ export function getImportOptions() {
   );
 }
 
+export type ImportSourceFolders = {
+  path: string;
+  parentPath: string | null;
+  folders: { name: string; path: string }[];
+  nextCursor?: string | null;
+};
+
+export function listImportSourceFolders(path: string, cursor?: string, signal?: AbortSignal) {
+  const query = new URLSearchParams({ path, limit: "50" });
+  if (cursor) query.set("cursor", cursor);
+  return authRequest<ImportSourceFolders>(`/api/v1/imports/source-folders?${query}`, { signal }, "Could not load server import folders");
+}
+
 export function listImportJobs() {
   return authRequest<ImportJob[]>(
     "/api/v1/imports",
@@ -362,6 +399,14 @@ export function retryImportJob(jobId: string) {
     `/api/v1/imports/${jobId}/retry`,
     { method: "POST" },
     "Could not retry failed import items",
+  );
+}
+
+export function deleteImportJob(jobId: string) {
+  return authRequest<void>(
+    `/api/v1/imports/${jobId}`,
+    { method: "DELETE" },
+    "Could not remove the import",
   );
 }
 
@@ -513,8 +558,7 @@ export async function getAlbum(
     sort: filters.sort,
   });
   if (filters.query) queryParams.set("query", filters.query);
-  if (filters.year !== undefined)
-    queryParams.set("year", String(filters.year));
+  if (filters.year !== undefined) queryParams.set("year", String(filters.year));
   if (filters.tagId) queryParams.set("tagId", filters.tagId);
   if (cursor) queryParams.set("cursor", cursor);
   const response = await authRequest<
@@ -558,11 +602,13 @@ export function setAlbumItems(
   albumId: string,
   itemIds: string[],
   included: boolean,
+  signal?: AbortSignal,
 ) {
   return authRequest<BatchItemsResult>(
     `/api/v1/albums/${albumId}/items/batch`,
     {
       method: "POST",
+      signal,
       body: JSON.stringify({ itemIds, included }),
     },
     included
@@ -571,8 +617,8 @@ export function setAlbumItems(
   );
 }
 
-export async function listAlbumShares(albumId: string): Promise<ItemShare[]> {
-  const response = await authRequest<{ shares: ItemShare[] }>(
+export async function listAlbumShares(albumId: string): Promise<AlbumShare[]> {
+  const response = await authRequest<{ shares: AlbumShare[] }>(
     `/api/v1/albums/${albumId}/shares`,
     undefined,
     "Could not load album access",
@@ -580,10 +626,14 @@ export async function listAlbumShares(albumId: string): Promise<ItemShare[]> {
   return response.shares;
 }
 
-export function shareAlbum(albumId: string, recipientUserId: string) {
-  return authRequest<ItemShare>(
+export function shareAlbum(
+  albumId: string,
+  recipientUserId: string,
+  role: AlbumShareRole = "viewer",
+) {
+  return authRequest<AlbumShare>(
     `/api/v1/albums/${albumId}/shares/${recipientUserId}`,
-    { method: "PUT", body: JSON.stringify({ role: "viewer" }) },
+    { method: "PUT", body: JSON.stringify({ role }) },
     "Could not share the album",
   );
 }
@@ -1011,6 +1061,22 @@ export async function getDeveloperOperationalHealth() {
     "/api/v1/developer/maintenance/health",
     undefined,
     "Could not load operational health",
+  );
+}
+
+export async function getClusterHosts() {
+  return authRequest<ClusterHosts>(
+    "/api/v1/developer/maintenance/hosts",
+    undefined,
+    "Could not load the PhotoDrive servers",
+  );
+}
+
+export async function setPrimaryHost(hostId: string) {
+  return authRequest<ClusterHosts>(
+    "/api/v1/developer/maintenance/primary-host",
+    { method: "PUT", body: JSON.stringify({ hostId }) },
+    "Could not change the primary server",
   );
 }
 

@@ -61,6 +61,22 @@ internal sealed class OriginalCache : IOriginalCache
         return Path.Combine(_rootDirectory, sha256);
     }
 
+    /// <summary>
+    /// Records recent use for LRU eviction. Best effort: only a file's owner may change its timestamps, and cache
+    /// files left by an earlier container user (for example root-owned files on a Windows bind mount) must still
+    /// be served. Such files merely look older to eviction.
+    /// </summary>
+    internal static void TouchForEviction(string path)
+    {
+        try
+        {
+            File.SetLastAccessTimeUtc(path, DateTime.UtcNow);
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+        {
+        }
+    }
+
     public bool Exists(string sha256, long expectedSizeBytes)
     {
         var path = PathFor(sha256);
@@ -77,7 +93,7 @@ internal sealed class OriginalCache : IOriginalCache
             return Task.FromResult<FileStream?>(null);
         }
 
-        File.SetLastAccessTimeUtc(path, DateTime.UtcNow);
+        OriginalCache.TouchForEviction(path);
         return Task.FromResult<FileStream?>(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true));
     }
 
@@ -115,7 +131,7 @@ internal sealed class OriginalCache : IOriginalCache
                     }
                 }
                 File.Move(temporaryPath, path, overwrite: true);
-                File.SetLastAccessTimeUtc(path, DateTime.UtcNow);
+                OriginalCache.TouchForEviction(path);
             }
             finally
             {
@@ -314,7 +330,7 @@ internal sealed class OriginalCache : IOriginalCache
 
             await stream.DisposeAsync();
             File.Move(temporaryPath, finalPath, overwrite: true);
-            File.SetLastAccessTimeUtc(finalPath, DateTime.UtcNow);
+            OriginalCache.TouchForEviction(finalPath);
             _completed = true;
             DisposeResources();
             await owner.EvictAsync(sha256, cancellationToken);

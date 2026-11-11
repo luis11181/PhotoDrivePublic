@@ -1,6 +1,5 @@
 using System.Text;
 using CSSApps.Api.AccessControl;
-using Microsoft.Data.Sqlite;
 
 namespace CSSApps.Api;
 
@@ -18,17 +17,16 @@ public sealed record SanitizedConfigurationReport(
     int KnownProxyNetworkCount,
     bool IpAllowlistEnabled,
     int AllowedClientNetworkCount,
-    string UsersDatabaseDirectory,
-    string CatalogDatabaseDirectory,
+    string DatabaseMode,
+    string DatabaseReplicaDirectory,
     string DataProtectionKeysDirectory,
     string StagingDirectory,
     string ThumbnailDirectory,
     string OriginalCacheDirectory,
     string BackupDirectory,
     bool ScheduledBackupsEnabled,
-    string BackupAnchorLocalTime,
-    int BackupIntervalHours,
-    string BackupTimeZone)
+    int BackupIntervalDays,
+    int BackupRetainedSets)
 {
     public static SanitizedConfigurationReport Create(
         IConfiguration configuration,
@@ -36,7 +34,8 @@ public sealed record SanitizedConfigurationReport(
         string contentRootPath)
     {
         var layers = new List<string>();
-        AddFileIfPresent(layers, contentRootPath, "appsettings.json");
+        AddFileIfPresent(layers, contentRootPath, "deployment.json");
+        AddFileIfPresent(layers, contentRootPath, $"deployment.{environmentName}.json");
         layers.Add("environment variables");
 
         return new SanitizedConfigurationReport(
@@ -54,23 +53,22 @@ public sealed record SanitizedConfigurationReport(
             configuration.GetValue<bool?>("AccessControl:IpAllowlist:Enabled") ??
                 !string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase),
             ConfigurationList.Read(configuration, "AccessControl:IpAllowlist:AllowedNetworks").Length,
-            ConnectionDirectory(configuration, "UsersModule"),
-            ConnectionDirectory(configuration, "MediaCatalog"),
+            DatabaseModeValue(configuration),
+            ReplicaDirectory(configuration),
             DirectoryValue(configuration, "Security:DataProtectionKeysDirectory"),
             DirectoryValue(configuration, "MediaStorage:LocalDisk:StagingDirectory"),
             DirectoryValue(configuration, "MediaStorage:LocalDisk:ThumbnailDirectory"),
             DirectoryValue(configuration, "MediaStorage:LocalDisk:OriginalCacheDirectory"),
             DirectoryValue(configuration, "MediaStorage:LocalDisk:BackupDirectory"),
             configuration.GetValue<bool?>("MediaStorage:Backups:ScheduleEnabled") ?? true,
-            configuration["MediaStorage:Backups:AnchorLocalTime"] ?? "00:00",
-            configuration.GetValue<int?>("MediaStorage:Backups:IntervalHours") ?? 12,
-            configuration["MediaStorage:Backups:TimeZoneId"] ?? "UTC");
+            configuration.GetValue<int?>("MediaStorage:Backups:IntervalDays") ?? 7,
+            configuration.GetValue<int?>("MediaStorage:Backups:RetainedSets") ?? 8);
     }
 
     public string ToDisplayText()
     {
         var text = new StringBuilder();
-        text.AppendLine("PhotoDrive effective configuration (sanitized)");
+        text.AppendLine("Media Explorer effective configuration (sanitized)");
         text.AppendLine($"Environment: {Environment}");
         text.AppendLine("Configuration layers:");
         foreach (var layer in ConfigurationLayers) text.AppendLine($"- {layer}");
@@ -82,14 +80,14 @@ public sealed record SanitizedConfigurationReport(
         text.AppendLine($"Reverse proxy: {Status(ReverseProxyEnabled)}; trusted addresses={KnownProxyAddressCount}; trusted networks={KnownProxyNetworkCount}");
         text.AppendLine($"Client IP allowlist: {Status(IpAllowlistEnabled)}; entries={AllowedClientNetworkCount}");
         text.AppendLine("Directories:");
-        text.AppendLine($"- Users database: {UsersDatabaseDirectory}");
-        text.AppendLine($"- Catalog database: {CatalogDatabaseDirectory}");
+        text.AppendLine($"Database: {DatabaseMode}");
+        text.AppendLine($"- Database replica: {DatabaseReplicaDirectory}");
         text.AppendLine($"- Data Protection keys: {DataProtectionKeysDirectory}");
         text.AppendLine($"- Staging: {StagingDirectory}");
         text.AppendLine($"- Thumbnails: {ThumbnailDirectory}");
         text.AppendLine($"- Original cache: {OriginalCacheDirectory}");
         text.AppendLine($"- Backups: {BackupDirectory}");
-        text.Append($"Backup schedule: {Status(ScheduledBackupsEnabled)}; anchor={BackupAnchorLocalTime}; intervalHours={BackupIntervalHours}; timeZone={BackupTimeZone}");
+        text.Append($"Backup schedule: {Status(ScheduledBackupsEnabled)}; intervalDays={BackupIntervalDays}; retainedSets={BackupRetainedSets}");
         return text.ToString();
     }
 
@@ -103,22 +101,22 @@ public sealed record SanitizedConfigurationReport(
             ? []
             : value.Split(separator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string ConnectionDirectory(IConfiguration configuration, string connectionName)
+    // Reports the database kind only; the URL (database and organization names) and token are never printed.
+    private static string DatabaseModeValue(IConfiguration configuration)
     {
-        var value = configuration.GetConnectionString(connectionName);
-        if (string.IsNullOrWhiteSpace(value)) return "(not configured)";
+        var url = configuration["Database:Url"];
+        if (string.IsNullOrWhiteSpace(url)) return "(not configured)";
+        return url.StartsWith("turso://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("libsql://", StringComparison.OrdinalIgnoreCase)
+            ? "Turso Cloud with local replica"
+            : "local Turso file";
+    }
 
-        try
-        {
-            var dataSource = new SqliteConnectionStringBuilder(value).DataSource;
-            if (string.IsNullOrWhiteSpace(dataSource) || !Path.IsPathFullyQualified(dataSource))
-                return "(not configured with an absolute path)";
-            return Path.GetDirectoryName(dataSource) ?? Path.GetPathRoot(dataSource) ?? "(not configured)";
-        }
-        catch (ArgumentException)
-        {
-            return "(invalid connection string)";
-        }
+    private static string ReplicaDirectory(IConfiguration configuration)
+    {
+        var path = configuration["Database:ReplicaPath"];
+        if (string.IsNullOrWhiteSpace(path)) return "(not configured)";
+        if (!Path.IsPathFullyQualified(path)) return "(not configured with an absolute path)";
+        return Path.GetDirectoryName(path) ?? "(not configured)";
     }
 
     private static string DirectoryValue(IConfiguration configuration, string key) =>

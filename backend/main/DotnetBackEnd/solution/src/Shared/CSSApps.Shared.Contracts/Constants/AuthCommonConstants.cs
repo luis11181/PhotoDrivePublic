@@ -22,7 +22,6 @@ public static class AuthCommonConstants
     public abstract class CustomClaims
     {
         public const string Id = "id";
-        public const string Permission = "permission";
         public const string Role = ClaimTypes.Role;
     }
 }

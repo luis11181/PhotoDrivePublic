@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Share2,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -65,6 +66,8 @@ import { SelectionActions } from "@/features/library/components/selection-action
 import { ShareDialog } from "@/features/library/components/share-dialog";
 import { TrashPreviewDialog } from "@/features/library/components/trash-preview-dialog";
 import { RenameItemDialog } from "@/features/library/components/rename-item-dialog";
+import { UploadDialog } from "@/features/library/components/upload-dialog";
+import { useUploadQueue } from "@/features/uploads/upload-queue-provider";
 import { DownloadConfirmationDialog } from "@/features/library/components/download-confirmation-dialog";
 import { catalogPreviewHref } from "@/features/catalog/catalog-item-links";
 import {
@@ -102,6 +105,7 @@ function AlbumsWorkspace({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const uploadQueue = useUploadQueue();
   const viewerItemId = searchParams.get("preview");
   const [query, setQuery] = useState("");
   const [mediaType, setMediaType] = useState<MediaTypeFilter>("all");
@@ -118,6 +122,8 @@ function AlbumsWorkspace({
   const [sharingItems, setSharingItems] = useState<MediaItem[]>([]);
   const [addingItems, setAddingItems] = useState<MediaItem[]>([]);
   const [addingPhotos, setAddingPhotos] = useState(false);
+  const [uploadingToAlbum, setUploadingToAlbum] = useState(false);
+  const [queueingUploads, setQueueingUploads] = useState(false);
   const [pendingTrash, setPendingTrash] = useState<MediaItem[]>([]);
   const [pendingAlbumDownload, setPendingAlbumDownload] =
     useState<Album | null>(null);
@@ -153,6 +159,31 @@ function AlbumsWorkspace({
   const album =
     detail.data?.pages[0]?.album ??
     albums.data?.find((candidate) => candidate.id === albumId);
+  const canEditMembers =
+    album?.accessRole === "owner" || album?.accessRole === "collaborator";
+
+  async function uploadToAlbum(files: FileList) {
+    if (!album || !canEditMembers || queueingUploads) return;
+    setQueueingUploads(true);
+    try {
+      const result = await uploadQueue.enqueueFiles(Array.from(files), {
+        useDefaultMediaFolder: true,
+        albumId: album.id,
+        albumName: album.name,
+      });
+      if (result.failed)
+        setMessage(result.error ?? t("albums.uploadQueueFailed"));
+      if (result.accepted) setUploadingToAlbum(false);
+    } catch (reason) {
+      setMessage(
+        reason instanceof Error
+          ? reason.message
+          : t("albums.uploadQueueFailed"),
+      );
+    } finally {
+      setQueueingUploads(false);
+    }
+  }
   const tags = useQuery({
     queryKey: ["tags"],
     queryFn: listTags,
@@ -166,11 +197,11 @@ function AlbumsWorkspace({
   const availableYears = detail.data?.pages[0]?.availableYears ?? [];
   const hasActiveAlbumFilters = Boolean(
     normalizedAlbumQuery ||
-      mediaType !== "all" ||
-      photoSort !== "added_desc" ||
-      photoYear !== undefined ||
-      selectedTagId ||
-      favoritesOnly,
+    mediaType !== "all" ||
+    photoSort !== "added_desc" ||
+    photoYear !== undefined ||
+    selectedTagId ||
+    favoritesOnly,
   );
   const {
     selectedIds,
@@ -384,7 +415,7 @@ function AlbumsWorkspace({
 
   async function remove(itemsToRemove: MediaItem[]) {
     if (!album) return;
-    if (album.accessRole !== "owner" || !itemsToRemove.length) return;
+    if (!canEditMembers || !itemsToRemove.length) return;
     setBusy(true);
     setMessage("");
     try {
@@ -534,14 +565,24 @@ function AlbumsWorkspace({
                   <Download size={16} /> {t("albums.downloadZip")}
                 </button>
               )}
+              {canEditMembers && (
+                <button
+                  className="primary"
+                  onClick={() => setUploadingToAlbum(true)}
+                >
+                  <Upload size={17} /> {t("albums.upload")}
+                </button>
+              )}
+              {canEditMembers && (
+                <button
+                  className="primary"
+                  onClick={() => setAddingPhotos(true)}
+                >
+                  <ImagePlus size={17} /> {t("albums.addPhotos")}
+                </button>
+              )}
               {album?.accessRole === "owner" && (
                 <>
-                  <button
-                    className="primary"
-                    onClick={() => setAddingPhotos(true)}
-                  >
-                    <ImagePlus size={17} /> {t("albums.addPhotos")}
-                  </button>
                   <button
                     className="secondary"
                     onClick={() => setEditing(album)}
@@ -573,6 +614,9 @@ function AlbumsWorkspace({
                   })
                 : t("albums.shared")}
             </p>
+          )}
+          {album?.accessRole === "collaborator" && (
+            <p className="status-note">{t("albums.collaboratorHelp")}</p>
           )}
           {message && <p className="status-note">{message}</p>}
 
@@ -632,7 +676,7 @@ function AlbumsWorkspace({
                           {candidate.memberCount === 1
                             ? t("albums.item")
                             : t("albums.items")}
-                          {candidate.accessRole === "viewer"
+                          {candidate.accessRole !== "owner"
                             ? ` · ${t("albums.sharedBy", {
                                 name:
                                   candidate.sharedByDisplayName ??
@@ -706,7 +750,7 @@ function AlbumsWorkspace({
                   onShare={setSharingItems}
                   onAddToAlbum={setAddingItems}
                   onRemoveFromAlbum={
-                    album?.accessRole === "owner"
+                    canEditMembers
                       ? () => void remove(selectedItems)
                       : undefined
                   }
@@ -760,8 +804,7 @@ function AlbumsWorkspace({
                       : "albums.empty",
                   )}
                   action={
-                    album?.accessRole === "owner" &&
-                    !hasActiveAlbumFilters ? (
+                    canEditMembers && !hasActiveAlbumFilters ? (
                       <button
                         className="primary"
                         type="button"
@@ -885,7 +928,7 @@ function AlbumsWorkspace({
           onClose={() => setAddingItems([])}
         />
       )}
-      {addingPhotos && album?.accessRole === "owner" && (
+      {addingPhotos && album && canEditMembers && (
         <AddPhotosToAlbumDialog
           album={album}
           existingIds={items.map((item) => item.id)}
@@ -902,6 +945,16 @@ function AlbumsWorkspace({
             setAddingPhotos(false);
             router.push("/photos");
           }}
+        />
+      )}
+      {uploadingToAlbum && album && canEditMembers && (
+        <UploadDialog
+          view="photos"
+          albumName={album.name}
+          uploading={queueingUploads}
+          progress=""
+          onFiles={(files) => void uploadToAlbum(files)}
+          onClose={() => setUploadingToAlbum(false)}
         />
       )}
       {editing && (
@@ -934,7 +987,7 @@ function AlbumsWorkspace({
           onShare={() => setSharingItems([contextMenu.item])}
           onTrash={() => setPendingTrash([contextMenu.item])}
           extraActions={
-            album?.accessRole === "owner"
+            canEditMembers
               ? [
                   {
                     label: t("albums.remove"),
@@ -1007,7 +1060,10 @@ function AlbumFilterBar({
 
   return (
     <>
-      <div className="photo-filter-row album-filter-row" aria-label={t("albums.filters")}>
+      <div
+        className="photo-filter-row album-filter-row"
+        aria-label={t("albums.filters")}
+      >
         <label className="filter-select">
           <span>{t("library.type")}</span>
           <select
@@ -1092,7 +1148,10 @@ function AlbumFilterBar({
         year !== undefined ||
         favoritesOnly ||
         selectedTagId) && (
-        <div className="active-filter-chips" aria-label={t("library.activeFilters")}>
+        <div
+          className="active-filter-chips"
+          aria-label={t("library.activeFilters")}
+        >
           {mediaType !== "all" && (
             <button type="button" onClick={() => onMediaTypeChange("all")}>
               {t("library.type")}: {typeLabel} <X />

@@ -1,7 +1,10 @@
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
-const { chromium } = require("playwright");
+const { createRequire } = require("node:module");
+const { chromium } = createRequire(
+  path.resolve(__dirname, "../../frontend/package.json"),
+)("playwright");
 
 const frontendDirectory = path.resolve(__dirname, "../../frontend");
 const outputDirectory = path.join(frontendDirectory, "out");
@@ -17,7 +20,12 @@ const journeys = [
 async function main() {
   const server = await startStaticServer();
   try {
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch({
+      headless: true,
+      ...(process.env.PHOTODRIVE_BROWSER_CHANNEL
+        ? { channel: process.env.PHOTODRIVE_BROWSER_CHANNEL }
+        : {}),
+    });
     try {
       for (const journey of journeys) await runJourney(browser, journey);
     } finally {
@@ -30,17 +38,58 @@ async function main() {
 }
 
 async function runJourney(browser, journey) {
-  const context = await browser.newContext({ viewport: journey.viewport });
+  const context = await browser.newContext({
+    viewport: journey.viewport,
+    locale: "en-US",
+  });
   const page = await context.newPage();
   const pageErrors = [];
   page.on("pageerror", (error) => {
     pageErrors.push(error.message);
-    console.error(`PAGE ERROR ${journey.role}: ${error.message}`);
+    console.error(`PAGE ERROR ${journey.role} ${page.url()}: ${error.stack || error.message}`);
   });
-  await page.route("**/api/v1/**", (route) => fulfillApi(route, journey));
+  await context.route("**/api/v1/**", (route) => fulfillApi(route, journey));
 
   try {
+    if (process.argv.includes("--uploads-only")) {
+      await checkAlbumUploadThroughput(page);
+      if (pageErrors.length)
+        throw new Error(`Browser page errors: ${pageErrors.join(" | ")}`);
+      console.log(
+        `PASS album upload throughput ${journey.role} ${journey.viewport.width < 700 ? "phone" : "desktop"}`,
+      );
+      return;
+    }
+    if (process.argv.includes("--imports-only")) {
+      await checkServerImports(page, journey);
+      if (pageErrors.length)
+        throw new Error(`Browser page errors: ${pageErrors.join(" | ")}`);
+      console.log(
+        `PASS server imports ${journey.role} ${journey.viewport.width < 700 ? "phone" : "desktop"}`,
+      );
+      return;
+    }
+    if (process.argv.includes("--albums-only")) {
+      await openAndExpectHeading(
+        page,
+        "/albums?album=30000000-0000-0000-0000-000000000001",
+        "Release album",
+      );
+      await checkAlbumCollaboration(page, journey);
+      if (pageErrors.length)
+        throw new Error(`Browser page errors: ${pageErrors.join(" | ")}`);
+      console.log(
+        `PASS album collaboration ${journey.role} ${journey.viewport.width < 700 ? "phone" : "desktop"}`,
+      );
+      return;
+    }
+    await checkStorageUsage(page);
+    if (process.argv.includes("--storage-only")) { console.log(`PASS storage ${journey.role} ${journey.viewport.width}`); return; }
     await openAndExpectHeading(page, "/files", "Files");
+    await page.getByLabel("Type").selectOption("pdf");
+    await page.getByRole("button", { name: "Reset", exact: true }).click();
+    if ((await page.getByLabel("Type").inputValue()) !== "all")
+      throw new Error("Files reset did not clear the type filter.");
     if (
       (await page
         .getByLabel("Sort by")
@@ -263,6 +312,7 @@ async function runJourney(browser, journey) {
       1,
     );
     await page.keyboard.press("Escape");
+    await checkAlbumCollaboration(page, journey);
     await openAndExpectHeading(page, "/shared", "Shared with me");
 
     if (journey.viewport.width < 700) {
@@ -280,6 +330,11 @@ async function runJourney(browser, journey) {
         1,
       );
       await openAndExpectHeading(page, "/developer", "Developer tools");
+      // The last verified backup date is shown on the always-visible Backup health card.
+      await page
+        .locator(".developer-health-card-meta", { hasText: "Last remotely verified backup:" })
+        .waitFor({ state: "visible", timeout: 10000 });
+      await capturePreview(page, "developer");
     } else {
       await expectCount(
         sidebar.getByText("Family accounts", { exact: true }),
@@ -298,6 +353,348 @@ async function runJourney(browser, journey) {
     );
   } finally {
     await context.close();
+  }
+}
+
+async function checkAlbumCollaboration(page, journey) {
+  const albumPath = "/albums?album=30000000-0000-0000-0000-000000000001";
+  await page.setViewportSize({ width: journey.viewport.width, height: 420 });
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  const sharing = page.getByRole("dialog", { name: "Share “Release album”" });
+  await assertScrollableWithinViewport(page, sharing);
+  await sharing
+    .getByRole("combobox", { name: "Family member", exact: true })
+    .selectOption("00000000-0000-0000-0000-000000000003");
+  await sharing
+    .getByRole("combobox", { name: "Access", exact: true })
+    .selectOption("collaborator");
+  const grant = page.waitForRequest(
+    (request) =>
+      request.method() === "PUT" &&
+      request.url().includes("/shares/") &&
+      request.postDataJSON().role === "collaborator",
+  );
+  await sharing.getByRole("button", { name: "Share as collaborator" }).click();
+  await grant;
+  const existingRole = sharing.getByLabel("Access for Release recipient");
+  await existingRole.waitFor();
+  const downgrade = page.waitForRequest(
+    (request) =>
+      request.method() === "PUT" &&
+      request.url().includes("/shares/") &&
+      request.postDataJSON().role === "viewer",
+  );
+  await existingRole.selectOption("viewer");
+  await downgrade;
+  await sharing.getByRole("button", { name: "Close", exact: true }).click();
+  await page.setViewportSize(journey.viewport);
+
+  journey.albumRole = "collaborator";
+  await openAndExpectHeading(page, albumPath, "Release album");
+  await expectCount(page.getByRole("button", { name: "Edit", exact: true }), 0);
+  await expectCount(
+    page.getByRole("button", { name: "Share", exact: true }),
+    0,
+  );
+  await expectCount(
+    page.getByRole("button", { name: "Delete", exact: true }),
+    0,
+  );
+  await page.getByRole("button", { name: "Add photos", exact: true }).click();
+  const picker = page.getByRole("dialog", {
+    name: "Add photos to “Release album”",
+  });
+  await picker.waitFor();
+  await picker.getByRole("button", { name: "Close", exact: true }).click();
+  await checkAlbumUpload(page, journey, albumPath);
+  await page.setViewportSize({ width: journey.viewport.width, height: 240 });
+  await page.locator(".media-card").first().click({ button: "right" });
+  await assertScrollableWithinViewport(page, page.getByRole("menu"));
+  const removal = page.waitForRequest(
+    (request) =>
+      request.method() === "POST" &&
+      request.url().includes("/items/batch") &&
+      request.postDataJSON().included === false,
+  );
+  await page.getByRole("menuitem", { name: "Remove", exact: true }).click();
+  await removal;
+  await page.setViewportSize(journey.viewport);
+
+  journey.albumRole = "viewer";
+  await openAndExpectHeading(page, albumPath, "Release album");
+  await expectCount(
+    page.getByRole("button", { name: "Add photos", exact: true }),
+    0,
+  );
+  await expectCount(
+    page.getByRole("button", { name: "Upload photos", exact: true }),
+    0,
+  );
+  await page.locator(".media-card").first().click({ button: "right" });
+  await expectCount(
+    page.getByRole("menuitem", { name: "Remove", exact: true }),
+    0,
+  );
+  await page.keyboard.press("Escape");
+  journey.albumRole = "owner";
+}
+
+async function assertScrollableWithinViewport(page, locator) {
+  await locator.waitFor();
+  const box = await locator.boundingBox();
+  const viewport = page.viewportSize();
+  if (
+    !box ||
+    box.y < 0 ||
+    box.y + box.height > viewport.height + 1 ||
+    box.x < 0 ||
+    box.x + box.width > viewport.width + 1
+  )
+    throw new Error("Overlay extends outside the viewport.");
+  const scroll = await locator.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return {
+      height: element.clientHeight,
+      content: element.scrollHeight,
+      top: element.scrollTop,
+    };
+  });
+  if (scroll.content > scroll.height && scroll.top <= 0)
+    throw new Error("Oversized overlay cannot scroll.");
+}
+
+async function checkAlbumUpload(page, journey, albumPath) {
+  await page
+    .getByRole("button", { name: "Upload photos", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Upload to “Release album”",
+  });
+  await dialog
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles({
+      name: "Album upload.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7ioAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    });
+  await page.locator(".upload-queue-row.failed").waitFor();
+  await page
+    .getByText(
+      "The upload is saved in your library, but could not be added to the album.",
+      { exact: false },
+    )
+    .waitFor();
+  await openAndExpectHeading(page, "/photos", "Photos");
+  await page
+    .locator(`[data-media-item-id="${journey.uploadItem.id}"]`)
+    .waitFor();
+  await page.reload();
+  await page.locator(".upload-queue-row.failed").waitFor();
+  await page
+    .locator(".upload-queue-row.failed")
+    .getByRole("button", { name: "Retry", exact: true })
+    .click();
+  await page.locator(".upload-queue-toggle").click();
+  await page.locator(".upload-queue-row.completed").waitFor();
+  if (
+    journey.uploadCreates !== 1 ||
+    journey.uploadCompletes !== 1 ||
+    journey.albumUploadAttempts !== 2
+  )
+    throw new Error("Retrying album membership repeated the original upload.");
+  await page
+    .locator(".upload-queue-row.completed")
+    .getByRole("button", { name: "Dismiss", exact: true })
+    .click();
+  await openAndExpectHeading(page, albumPath, "Release album");
+  await page
+    .locator(`[data-media-item-id="${journey.uploadItem.id}"]`)
+    .waitFor();
+}
+
+async function checkAlbumUploadThroughput(page) {
+  const sessions = new Map();
+  const memberships = new Set();
+  let releaseTransfers;
+  const transfers = new Promise((resolve) => {
+    releaseTransfers = resolve;
+  });
+  let releaseRefresh;
+  const refresh = new Promise((resolve) => {
+    releaseRefresh = resolve;
+  });
+  let refreshStarted = false;
+  let cancelledId;
+  const reply = (route, data) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ successful: true, data }),
+    });
+  await page.route(/\/api\/v1\/uploads(?:\/.*)?$/, async (route) => {
+    const request = route.request();
+    const parts = new URL(request.url()).pathname.split("/");
+    if (parts.at(-1) === "uploads") {
+      const input = request.postDataJSON();
+      if (!input.useDefaultMediaFolder || input.parentId)
+        throw new Error("Album batch changed the upload destination.");
+      if (
+        [...sessions.values()].some(
+          (s) => s.clientUploadId === input.clientUploadId,
+        )
+      )
+        throw new Error("An album batch file was created twice.");
+      const session = {
+        ...input,
+        id: input.clientUploadId,
+        receivedBytes: 0,
+        chunkSizeBytes: 32,
+        state: "pending",
+      };
+      sessions.set(session.id, session);
+      return reply(route, session);
+    }
+    const completing = parts.at(-1) === "complete";
+    const session = sessions.get(parts.at(completing ? -2 : -1));
+    if (!session) throw new Error("Unknown synthetic upload session.");
+    if (request.method() === "DELETE") {
+      cancelledId = session.id;
+      return reply(route, {});
+    }
+    if (request.method() === "PATCH") {
+      await transfers;
+      if (session.id === cancelledId) return;
+      const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(
+        request.headers()["content-range"],
+      );
+      if (
+        !range ||
+        Number(range[1]) !== session.receivedBytes ||
+        Number(range[3]) !== session.sizeBytes
+      )
+        throw new Error("Concurrent uploads lost their ordered chunk offsets.");
+      session.receivedBytes = Number(range[2]) + 1;
+    }
+    if (completing) {
+      if (session.receivedBytes !== session.sizeBytes)
+        throw new Error("Upload completed before all chunks arrived.");
+      const crypto = require("node:crypto");
+      const expectedHash = crypto
+        .createHash("sha256")
+        .update(Buffer.alloc(80, 7))
+        .digest("hex");
+      if (request.postDataJSON().sha256 !== expectedHash)
+        throw new Error("Concurrent uploads supplied an incorrect checksum.");
+      session.state = "completed";
+      return reply(route, {
+        item: releasePhotoItem(
+          session.id,
+          session.name,
+          "2026-10-22T12:00:00Z",
+        ),
+        duplicateState: "none",
+      });
+    }
+    return reply(route, session);
+  });
+  await page.route(/\/api\/v1\/albums\/[^/]+\/items\/batch$/, async (route) => {
+    const { itemIds } = route.request().postDataJSON();
+    itemIds.forEach((id) => memberships.add(id));
+    return reply(route, {
+      requestedCount: itemIds.length,
+      succeededCount: itemIds.length,
+      unchangedCount: 0,
+      failedCount: 0,
+      results: itemIds.map((itemId) => ({ itemId, status: "succeeded" })),
+    });
+  });
+  await page.route(
+    /\/api\/v1\/albums(?:\/[^/?]+)?(?:\?.*)?$/,
+    async (route) => {
+      if (!memberships.size) return route.fallback();
+      refreshStarted = true;
+      await refresh;
+      return route.fallback();
+    },
+  );
+  try {
+    await openAndExpectHeading(
+      page,
+      "/albums?album=30000000-0000-0000-0000-000000000001",
+      "Release album",
+    );
+    for (const indices of [[1], [2, 3, 4, 5, 6, 7, 8]]) {
+      await page
+        .getByRole("button", { name: "Upload photos", exact: true })
+        .click();
+      await page
+        .getByRole("dialog")
+        .locator('input[type="file"]')
+        .first()
+        .setInputFiles(
+          indices.map((index) => ({
+            name: `Batch ${index}.png`,
+            mimeType: "image/png",
+            buffer: Buffer.alloc(80, 7),
+          })),
+        );
+      await page.getByRole("dialog").waitFor({ state: "hidden" });
+      await waitForCondition(
+        () => sessions.size >= 1,
+        "The first upload did not start",
+      );
+    }
+    await page.locator(".upload-queue-toggle").click();
+    await waitForCondition(
+      () => sessions.size >= 3,
+      "Three files did not start together",
+    );
+    await page.locator(".upload-queue-row").nth(7).waitFor();
+    await expectCount(page.locator(".upload-queue-row.uploading"), 3);
+    if (sessions.size !== 3)
+      throw new Error("Too many concurrent uploads started.");
+    const cancelledRow = page
+      .locator(".upload-queue-row")
+      .filter({ hasText: "Batch 1.png" });
+    await cancelledRow
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await waitForCondition(
+      () => cancelledId && sessions.size >= 4,
+      "Cancelling one upload did not release its worker",
+    );
+    releaseTransfers();
+    // Keep all album refresh responses blocked: the remaining files must still
+    // finish, including multiple ordered chunks and album membership per file.
+    await waitForCondition(
+      () => memberships.size === 7 && refreshStarted,
+      "Album refresh blocked the remaining uploads",
+    );
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll(".upload-queue-row.completed").length === 7,
+    );
+    await expectCount(page.locator(".upload-queue-row.failed"), 0);
+    if (memberships.has(cancelledId) || sessions.size !== 8)
+      throw new Error("Cancellation affected the wrong album upload.");
+    console.log(
+      "Verified: three concurrent files, isolated cancellation, seven completions while album refresh is blocked.",
+    );
+  } finally {
+    releaseTransfers();
+    releaseRefresh();
+  }
+}
+
+async function waitForCondition(predicate, message) {
+  const deadline = Date.now() + 15000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }
 
@@ -414,6 +811,15 @@ async function openAndExpectHeading(page, path, heading) {
       { cause: error },
     );
   }
+  const filters = page.getByRole("button", { name: /Filters & sort/ });
+  if (await filters.isVisible()) {
+    if ((await filters.getAttribute("aria-expanded")) !== "false")
+      throw new Error("Phone filters should start collapsed.");
+    await filters.focus();
+    await page.keyboard.press("Enter");
+    if ((await filters.getAttribute("aria-expanded")) !== "true")
+      throw new Error("Phone filters did not expand from the keyboard.");
+  }
 }
 
 async function expectCount(locator, expected) {
@@ -433,8 +839,8 @@ async function expectTimelineTargetPosition(
     bounds = await locator.boundingBox();
     acceptable = Boolean(
       bounds &&
-        (Math.abs(bounds.y - expectedTop) <= 5 ||
-          (allowBottomClamp && bounds.y >= expectedTop)),
+      (Math.abs(bounds.y - expectedTop) <= 5 ||
+        (allowBottomClamp && bounds.y >= expectedTop)),
     );
     if (!acceptable) await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -442,6 +848,92 @@ async function expectTimelineTargetPosition(
     throw new Error(
       `Expected timeline target near ${expectedTop}px, received ${bounds?.y ?? "no bounds"}.`,
     );
+}
+
+async function checkServerImports(page, journey) {
+  await openAndExpectHeading(
+    page,
+    "/imports",
+    journey.isOwner ? "Import from server" : "Owner access required",
+  );
+  await expectCount(page.locator(".topbar .notification-button"), 0);
+  const navigationButton = page.locator(".topbar .menu-button");
+  if (journey.viewport.width <= 900) {
+    await navigationButton.click();
+    await page.locator(".sidebar-open").waitFor();
+    await page.locator(".sidebar-close").click();
+  } else if (await navigationButton.isVisible()) {
+    throw new Error("An inactive desktop navigation button is visible.");
+  }
+  await expectCount(
+    page
+      .locator(".sidebar")
+      .getByRole("link", { name: "Import from server", exact: true }),
+    journey.isOwner ? 1 : 0,
+  );
+  if (!journey.isOwner) {
+    if (journey.importRequests)
+      throw new Error("A member page sent a server-import API request.");
+    return;
+  }
+  const picker = page.getByRole("region", { name: "Choose a server folder" });
+  await picker.getByRole("alert").waitFor();
+  await picker.getByRole("button", { name: "Refresh imports" }).click();
+  await picker.getByRole("button", { name: "Takeout", exact: true }).waitFor();
+  if (
+    !(await page
+      .getByRole("button", { name: "Scan and start import", exact: true })
+      .isDisabled())
+  )
+    throw new Error("An import could start without a selected source.");
+  await picker.getByRole("button", { name: "More folders" }).click();
+  await picker
+    .getByRole("button", { name: "Another album", exact: true })
+    .waitFor();
+  await picker.getByRole("button", { name: "Takeout", exact: true }).click();
+  await picker
+    .getByRole("button", { name: "Google Photos", exact: true })
+    .click();
+  await picker.getByText("No subfolders here.", { exact: false }).waitFor();
+  await picker.getByRole("button", { name: "Use this folder" }).click();
+  await picker.getByRole("status").waitFor();
+  if (process.env.PHOTODRIVE_UI_SCREENSHOTS) {
+    fs.mkdirSync(process.env.PHOTODRIVE_UI_SCREENSHOTS, { recursive: true });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate((value) => {
+        document.documentElement.dataset.theme = value;
+      }, theme);
+      await page.screenshot({
+        path: path.join(
+          process.env.PHOTODRIVE_UI_SCREENSHOTS,
+          `imports-${journey.viewport.width}-${theme}.png`,
+        ),
+        fullPage: true,
+        animations: "disabled",
+      });
+    }
+  }
+  await page
+    .getByRole("button", { name: "Scan and start import", exact: true })
+    .click();
+  await page.getByText("Import started:", { exact: false }).waitFor();
+  if (journey.importBody?.sourcePath !== "Takeout/Google Photos")
+    throw new Error("The folder picker did not submit a relative source.");
+  await expectCount(picker.locator("input"), 0);
+  const fits = await picker.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.left >= 0 && bounds.right <= innerWidth;
+  });
+  if (!fits)
+    throw new Error("The server folder picker extends outside the viewport.");
+
+  // A finished import with failures can be removed from the list after confirming.
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.getByRole("button", { name: "Remove from list", exact: true }).click();
+  await page.getByText("The import was removed from the list.", { exact: true }).waitFor();
+  if (!journey.importRemoved)
+    throw new Error("Remove from list did not send DELETE /imports/:id.");
+  await expectCount(page.getByRole("button", { name: "Remove from list", exact: true }), 0);
 }
 
 async function fulfillApi(route, journey) {
@@ -464,7 +956,100 @@ async function fulfillApi(route, journey) {
     return;
   }
   let data = {};
-  if (path.endsWith("/users/me")) {
+  if (path.includes("/imports")) {
+    journey.importRequests = (journey.importRequests || 0) + 1;
+    if (route.request().method() === "DELETE" && path.endsWith("/imports/finished-job")) {
+      journey.importRemoved = true;
+      data = null;
+    } else if (path.endsWith("/imports")) {
+      data = journey.importRemoved
+        ? []
+        : [
+            {
+              id: "finished-job",
+              destinationFolderId: "import-media",
+              destinationPath: "Media",
+              sourceKind: "google_takeout",
+              nameConflictPolicy: "skip",
+              skipIdenticalFiles: true,
+              state: "completed_with_errors",
+              discoveredCount: 3,
+              pendingCount: 0,
+              processingCount: 0,
+              importedCount: 1,
+              duplicateCount: 0,
+              nameConflictCount: 0,
+              failedCount: 2,
+              warningCount: 0,
+              orphanSidecarCount: 0,
+              ignoredJsonCount: 0,
+              outcomes: { failed: 2 },
+              createdAt: "2026-10-20T12:00:00Z",
+              completedAt: "2026-10-20T12:05:00Z",
+            },
+          ];
+    } else if (path.endsWith("/imports/options"))
+      data = {
+        destinations: [
+          {
+            id: "import-media",
+            name: "Media",
+            path: "Media",
+            systemRole: "media_root",
+          },
+        ],
+      };
+    else if (path.endsWith("/imports/source-folders")) {
+      if (!journey.sourceFailureShown) {
+        journey.sourceFailureShown = true;
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json",
+          body: JSON.stringify({
+            successful: false,
+            error: { detail: "Source unavailable" },
+          }),
+        });
+        return;
+      }
+      const relative = url.searchParams.get("path") || "";
+      data = {
+        path: relative,
+        parentPath: relative ? (relative === "Takeout" ? "" : "Takeout") : null,
+        folders:
+          relative === ""
+            ? url.searchParams.has("cursor")
+              ? [{ name: "Another album", path: "Another album" }]
+              : [{ name: "Takeout", path: "Takeout" }]
+            : relative === "Takeout"
+              ? [{ name: "Google Photos", path: "Takeout/Google Photos" }]
+              : [],
+        nextCursor:
+          !relative && !url.searchParams.has("cursor") ? "next-folders" : null,
+      };
+    } else if (path.endsWith("/imports/google-takeout")) {
+      journey.importBody = route.request().postDataJSON();
+      data = {
+        id: "import-job",
+        destinationFolderId: "import-media",
+        destinationPath: "Media",
+        sourceKind: "google_takeout",
+        state: "completed",
+        discoveredCount: 0,
+        pendingCount: 0,
+        processingCount: 0,
+        importedCount: 0,
+        duplicateCount: 0,
+        nameConflictCount: 0,
+        failedCount: 0,
+        warningCount: 0,
+        orphanSidecarCount: 0,
+        ignoredJsonCount: 0,
+        outcomes: {},
+        createdAt: "2026-10-22T12:00:00Z",
+      };
+    } else data = [];
+  } else if (path.endsWith("/users/me")) {
     data = {
       id: journey.isOwner
         ? "00000000-0000-0000-0000-000000000001"
@@ -480,8 +1065,14 @@ async function fulfillApi(route, journey) {
     };
   } else if (path.endsWith("/users/sign-in-options")) {
     data = { googleEnabled: false, passwordEnabled: true };
+  } else if (path.endsWith("/storage-usage/files")) {
+    const category = url.searchParams.get("category");
+    data = { files: category === "versions" ? [] : [{ id: "20000000-0000-0000-0000-000000000001", name: category === "video" ? "large-video.mp4" : "archived-photo.jpg", bytes: 1000000, trashed: category === "trash", versionId: "30000000-0000-0000-0000-000000000001", current: true }], hasMore: false };
+  } else if (path.endsWith("/storage-usage")) {
+    data = { physicalBytes: 1000000, logicalBytes: 2000000, trashBytes: 0, retainedVersionBytes: 0, videoBytes: 1000000, calculatedAt: "2026-11-05T12:00:00Z", growth: [{ key: "2026-11", bytes: 1000000, count: 1 }], folders: [{ id: "10000000-0000-0000-0000-000000000001", name: "Archive folder", bytes: 1000000 }] };
   } else if (path.endsWith("/items/storage-summary")) {
     data = {
+      catalogFileCount: 0,
       storedOriginalBytes: 0,
       uniqueOriginalCount: 0,
       reclaimableTrashBytes: 0,
@@ -503,6 +1094,34 @@ async function fulfillApi(route, journey) {
     data = { events: [releaseTimelineEvent()] };
   } else if (path.endsWith("/tags")) {
     data = [];
+  } else if (path.endsWith("/uploads") && route.request().method() === "POST") {
+    const request = route.request().postDataJSON();
+    if (!request.useDefaultMediaFolder || request.parentId)
+      throw new Error(
+        "Album uploads must be placed in the uploader's Photos library.",
+      );
+    journey.uploadCreates = (journey.uploadCreates ?? 0) + 1;
+    journey.uploadSession = {
+      id: "50000000-0000-0000-0000-000000000001",
+      sizeBytes: request.sizeBytes,
+      receivedBytes: 0,
+      chunkSizeBytes: 5242880,
+      state: "uploading",
+    };
+    data = journey.uploadSession;
+  } else if (/\/uploads\/[^/]+\/complete$/.test(path)) {
+    journey.uploadCompletes = (journey.uploadCompletes ?? 0) + 1;
+    journey.uploadItem = releasePhotoItem(
+      "20000000-0000-0000-0000-000000000099",
+      "Album upload.png",
+      "2026-10-22T12:00:00Z",
+    );
+    journey.uploadSession.state = "completed";
+    data = { item: journey.uploadItem, duplicateState: "none" };
+  } else if (/\/uploads\/[^/]+$/.test(path)) {
+    if (route.request().method() === "PATCH")
+      journey.uploadSession.receivedBytes = journey.uploadSession.sizeBytes;
+    data = journey.uploadSession;
   } else if (path.endsWith("/system/cache-builds/options")) {
     data = {
       originalCacheMaxBytes: 53687091200,
@@ -516,11 +1135,13 @@ async function fulfillApi(route, journey) {
     };
   } else if (path.endsWith("/system/cache-builds")) {
     data = [];
+  } else if (path.endsWith("/developer/maintenance/hosts")) {
+    data = { hosts: [] };
   } else if (path.endsWith("/developer/maintenance/backup-status")) {
     data = {
       lastRemoteVerifiedAt: new Date().toISOString(),
       ageHours: 0,
-      freshnessWindowHours: 12,
+      freshnessWindowHours: 168,
       state: "current",
     };
   } else if (path.endsWith("/developer/maintenance/health")) {
@@ -541,10 +1162,58 @@ async function fulfillApi(route, journey) {
       cachePressure: false,
       issues: [],
     };
+  } else if (path.endsWith("/shares/recipients")) {
+    data = {
+      recipients: [
+        {
+          userId: "00000000-0000-0000-0000-000000000003",
+          displayName: "Release recipient",
+          email: "recipient@example.test",
+        },
+      ],
+    };
+  } else if (/\/albums\/[^/]+\/shares\/[^/]+$/.test(path)) {
+    data = {
+      recipientUserId: path.split("/").at(-1),
+      recipientDisplayName: "Release recipient",
+      recipientEmail: "recipient@example.test",
+      role: route.request().postDataJSON().role,
+      sharedAt: new Date().toISOString(),
+    };
+    journey.albumShares = [data];
+  } else if (/\/albums\/[^/]+\/shares$/.test(path)) {
+    data = { shares: journey.albumShares ?? [] };
+  } else if (/\/albums\/[^/]+\/items\/batch$/.test(path)) {
+    const { itemIds, included } = route.request().postDataJSON();
+    const albumUpload = included && itemIds.includes(journey.uploadItem?.id);
+    if (albumUpload)
+      journey.albumUploadAttempts = (journey.albumUploadAttempts ?? 0) + 1;
+    const fail = albumUpload && journey.albumUploadAttempts === 1;
+    if (albumUpload && !fail) journey.uploadAdded = true;
+    data = {
+      requestedCount: itemIds.length,
+      succeededCount: fail ? 0 : itemIds.length,
+      unchangedCount: 0,
+      failedCount: fail ? itemIds.length : 0,
+      results: itemIds.map((itemId) => ({
+        itemId,
+        status: fail ? "failed" : "succeeded",
+        message: fail ? "Simulated album membership failure" : undefined,
+      })),
+    };
   } else if (/\/albums\/[^/]+$/.test(path)) {
-    data = { album: releaseAlbum(), items: releasePhotoItems() };
+    data = {
+      album: { ...releaseAlbum(), accessRole: journey.albumRole ?? "owner" },
+      items: [
+        ...releasePhotoItems(),
+        ...(journey.uploadAdded ? [journey.uploadItem] : []),
+      ],
+      availableYears: [],
+    };
   } else if (path.endsWith("/albums")) {
-    data = { albums: [releaseAlbum()] };
+    data = {
+      albums: [{ ...releaseAlbum(), accessRole: journey.albumRole ?? "owner" }],
+    };
   } else if (path.endsWith("/photos")) {
     const cursor = url.searchParams.get("cursor");
     if (cursor === "release-anchor-middle") {
@@ -586,7 +1255,12 @@ async function fulfillApi(route, journey) {
         nextCursor: null,
       };
     } else {
-      data = { items: releasePhotoItems() };
+      data = {
+        items: [
+          ...releasePhotoItems(),
+          ...(journey.uploadItem ? [journey.uploadItem] : []),
+        ],
+      };
     }
   } else if (path.endsWith("/items/favorite-folders")) {
     data = {
@@ -647,27 +1321,27 @@ function releasePhotoItems() {
 
 function releasePhotoItem(id, name, capturedAt) {
   return {
-      id,
-      name,
-      parentId: null,
-      kind: "image",
-      mimeType: "image/jpeg",
-      sizeBytes: 2457600,
-      createdAt: "2026-07-01T12:00:00Z",
-      modifiedAt: "2026-07-30T12:00:00Z",
-      capturedAt,
-      favorite: false,
-      localState: "remote",
-      syncState: "synced",
-      tags: [],
-      capabilities: {
-        canRename: true,
-        canMove: true,
-        canTrash: true,
-        canFavorite: true,
-        canShare: true,
-      },
-    };
+    id,
+    name,
+    parentId: null,
+    kind: "image",
+    mimeType: "image/jpeg",
+    sizeBytes: 2457600,
+    createdAt: "2026-07-01T12:00:00Z",
+    modifiedAt: "2026-07-30T12:00:00Z",
+    capturedAt,
+    favorite: false,
+    localState: "remote",
+    syncState: "synced",
+    tags: [],
+    capabilities: {
+      canRename: true,
+      canMove: true,
+      canTrash: true,
+      canFavorite: true,
+      canShare: true,
+    },
+  };
 }
 
 function releaseTimelineEvent() {
@@ -801,3 +1475,40 @@ main().then(
     process.exit(1);
   },
 );
+
+async function checkStorageUsage(page) {
+  await openAndExpectHeading(page, "/storage", "Storage");
+  await page.getByText("Originals stored", { exact: true }).waitFor();
+  if (await page.getByRole("heading", { name: "Growth by month" }).count()) throw new Error("Monthly growth should be removed");
+  await page.getByRole("button", { name: /^Videos/ }).click();
+  await page.getByRole("link", { name: /large-video.mp4/ }).waitFor();
+  await page.getByRole("button", { name: "Only in older versions" }).click();
+  await page.getByText("No files in this breakdown.").waitFor();
+  await page.getByRole("button", { name: /Archive folder/ }).click();
+  await page.getByRole("heading", { name: "Archive folder", exact: true }).waitFor();
+  await page.getByRole("button", { name: "All files", exact: true }).click();
+  await page.getByRole("heading", { name: "Largest files", exact: true }).waitFor();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+  if (overflow) throw new Error("Storage page overflows viewport");
+  await capturePreview(page, "storage");
+  await page.getByRole("button", { name: "Account menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Account settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Account settings" });
+  await settings.getByRole("combobox", { name: /Language/ }).waitFor();
+  if (await settings.getByLabel("Current password", { exact: true }).count()) throw new Error("Password form should be under Security");
+  await settings.getByRole("combobox", { name: /Appearance/ }).selectOption("dark");
+  await capturePreview(page, "account");
+  await settings.getByRole("combobox", { name: /Appearance/ }).selectOption("light");
+  await settings.getByRole("button", { name: "Security", exact: true }).click();
+  await settings.getByLabel("Current password", { exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  await settings.waitFor({ state: "hidden" });
+
+}
+
+async function capturePreview(page, name) {
+  if (!process.env.PHOTODRIVE_SCREENSHOT_DIR) return;
+  fs.mkdirSync(process.env.PHOTODRIVE_SCREENSHOT_DIR, { recursive: true });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({path: path.join(process.env.PHOTODRIVE_SCREENSHOT_DIR, name + "-" + page.viewportSize().width + ".png"),fullPage:true, animations:"disabled"});
+}

@@ -29,6 +29,7 @@
   <Folder Name="/src/Shared/">
     <Project Path="src/Shared/CSSApps.Shared.Contracts/CSSApps.Shared.Contracts.csproj" />
     <Project Path="src/Shared/CSSApps.Shared.Infrastructure/CSSApps.Shared.Infrastructure.csproj" />
+    <Project Path="src/Shared/Turso.EntityFrameworkCore.Sqlite/Turso.EntityFrameworkCore.Sqlite.csproj" />
   </Folder>
   <Folder Name="/src/Shared/Utils/">
     <Project Path="src/Shared/Utils/CSSApps.Shared.Utils.ApiHelpers/CSSApps.Shared.Utils.ApiHelpers.csproj" />

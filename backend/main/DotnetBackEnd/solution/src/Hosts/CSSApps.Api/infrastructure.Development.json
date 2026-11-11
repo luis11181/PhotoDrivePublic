@@ -1,0 +1,44 @@
+{
+  "Security": {
+    "DataProtectionKeysDirectory": "/absolute/path/to/PhotoDriveData/Databases/MediaExplorer-test/keys"
+  },
+  "Database": {
+    "Url": "turso://replace-with-your-development-database.turso.io",
+    "ReplicaPath": "/absolute/path/to/PhotoDriveData/Databases/MediaExplorer-test/turso/photodrive.replica.db",
+    "PullIntervalSeconds": 30
+  },
+  "MediaStorage": {
+    "LocalDisk": {
+      "StagingDirectory": "/absolute/path/to/PhotoDriveData/Cache/MediaExplorer-test/staging",
+      "ThumbnailDirectory": "/absolute/path/to/PhotoDriveData/Cache/MediaExplorer-test/thumbnails",
+      "OriginalCacheDirectory": "/absolute/path/to/PhotoDriveData/Cache/MediaExplorer-test/blobs/sha256",
+      "OriginalCacheMaxBytes": 10737418240,
+      "OriginalCacheAutomaticMaxFileBytes": 524288000,
+      "BackupDirectory": "/absolute/path/to/PhotoDriveData/Cache/MediaExplorer-test/backups",
+      "BackupRetainedSnapshotCount": 20
+    },
+    "Backups": {
+      "ScheduleEnabled": true,
+      "IntervalDays": 7,
+      "RemoteRetentionDays": 90
+    },
+    "BackupStrategies": {
+      "RecoveryManifestsEnabled": true
+    },
+    "ImageToolPath": "convert",
+    "ImageIdentifyToolPath": "identify",
+    "VideoMetadataToolPath": "ffprobe",
+    "VideoThumbnailToolPath": "ffmpeg",
+    "FileTypeToolPath": "file",
+    "S3": {
+      "BucketName": "replace-with-your-development-originals-bucket",
+      "ProfileName": "photodrive",
+      "Region": "us-east-1"
+    },
+    "S3Backups": {
+      "BucketName": "replace-with-your-development-backups-bucket",
+      "ProfileName": "photodrive",
+      "Region": "us-east-1"
+    }
+  }
+}

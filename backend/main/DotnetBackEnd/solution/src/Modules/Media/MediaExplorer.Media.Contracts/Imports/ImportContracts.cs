@@ -2,10 +2,25 @@ namespace MediaExplorer.Media.Contracts;
 
 public sealed class CreateGoogleTakeoutImportReq
 {
+    /// <summary>Folder relative to the configured server import inbox; empty selects the inbox.</summary>
     public string SourcePath { get; set; } = null!;
     public Guid DestinationFolderId { get; set; }
     public string NameConflictPolicy { get; set; } = "skip";
     public bool SkipIdenticalFiles { get; set; } = true;
+}
+
+public sealed class ImportSourceFolderRes
+{
+    public string Name { get; init; } = "";
+    public string Path { get; init; } = "";
+}
+
+public sealed class ImportSourceFoldersRes
+{
+    public string Path { get; init; } = "";
+    public string? ParentPath { get; init; }
+    public IReadOnlyList<ImportSourceFolderRes> Folders { get; init; } = [];
+    public string? NextCursor { get; init; }
 }
 
 public sealed class ImportOptionsRes
