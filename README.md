@@ -137,7 +137,7 @@ migrations from two computers at the same time.
 
 ## Development
 
-Prerequisites: .NET 10 (pinned by `global.json`), Node.js 22+, ImageMagick, FFmpeg, and `file`.
+Prerequisites: .NET 10 (pinned by `global.json`), Node.js 24.22.2+ (pinned by `.nvmrc`, with npm 11.19.1), ImageMagick, FFmpeg, and `file`.
 
 1. Create a separate Development Turso database (its name should contain `development`) and fill in `infrastructure.Development.json`, `authentication.Development.json`, and `secrets.Development.json`.
 2. Apply migrations: `./photodrive migrate --environment development`.

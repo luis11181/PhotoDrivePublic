@@ -1,16 +1,15 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-bookworm-slim AS frontend-build
+FROM node:24.22.2-trixie-slim AS frontend-build
 WORKDIR /source/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm install --global npm@11.6.2 \
-    && npm ci
+RUN npm ci
 COPY frontend/ ./
 ENV NEXT_PUBLIC_API_BASE_URL="" \
     NEXT_PUBLIC_API_SAME_ORIGIN=true
 RUN npm run build
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-resolute AS backend-build
 WORKDIR /source
 COPY backend/main/DotnetBackEnd/solution/ ./
 RUN dotnet restore src/Hosts/CSSApps.Api/CSSApps.Api.csproj
@@ -19,7 +18,8 @@ RUN dotnet publish src/Hosts/CSSApps.Api/CSSApps.Api.csproj \
     --no-restore \
     --output /publish
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+# Ubuntu 26.04 LTS: glibc for the Turso native library, apt for ffmpeg/ImageMagick 7, and current HEIC/AVIF decoders.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-resolute AS runtime
 LABEL io.photodrive.operator-cli="1"
 ARG PHOTODRIVE_UID=1000
 ARG PHOTODRIVE_GID=1000

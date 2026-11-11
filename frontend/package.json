@@ -2,6 +2,11 @@
   "name": "new-media-explorer-frontend",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.19.1",
+  "engines": {
+    "node": ">=24.22.2 <25",
+    "npm": ">=11.19.1"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
@@ -15,22 +20,22 @@
     "serve-static:production": "serve out -l 60020 --no-port-switching"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.101.2",
-    "hash-wasm": "^4.12.0",
+    "@tanstack/react-query": "^5.107.1",
+    "hash-wasm": "4.13.0",
     "lucide-react": "0.511.0",
-    "next": "16.2.12",
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@types/node": "20.17.50",
-    "@types/react": "19.1.5",
-    "@types/react-dom": "19.1.5",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "eslint": "9.27.0",
-    "eslint-config-next": "16.2.12",
-    "prettier": "^3.9.5",
-    "playwright": "1.59.1",
-    "serve": "14.2.6",
+    "eslint-config-next": "16.4.6",
+    "playwright": "1.65.0",
+    "prettier": "3.9.10",
+    "serve": "14.2.7",
     "typescript": "5.8.3"
   },
   "overrides": {

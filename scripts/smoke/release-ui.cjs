@@ -742,7 +742,7 @@ async function expectPreviewDeepLinkRecovery(page) {
 
   await page.goBack();
   await page.waitForURL("**/photos");
-  await expectCount(page.locator(".photo-viewer"), 0);
+  await expectGone(page.locator(".photo-viewer"));
 
   await page.goForward();
   await page.waitForURL(`**/photos?preview=${second.id}`);
@@ -777,7 +777,7 @@ async function expectPreviewDeepLinkRecovery(page) {
     .locator('.photo-viewer-toolbar button[aria-label="Close viewer"]')
     .click();
   await page.waitForURL("**/photos");
-  await expectCount(page.locator(".photo-viewer"), 0);
+  await expectGone(page.locator(".photo-viewer"));
 
   const unavailableId = "20000000-0000-0000-0000-999999999999";
   await page.goto(`${siteUrl}/photos?preview=${unavailableId}`, {
@@ -796,7 +796,7 @@ async function expectPreviewDeepLinkRecovery(page) {
     .waitFor();
   await page.getByRole("button", { name: "Close viewer" }).click();
   await page.waitForURL("**/photos");
-  await expectCount(page.locator(".photo-viewer"), 0);
+  await expectGone(page.locator(".photo-viewer"));
 }
 
 async function openAndExpectHeading(page, path, heading) {
@@ -1511,4 +1511,9 @@ async function capturePreview(page, name) {
   fs.mkdirSync(process.env.PHOTODRIVE_SCREENSHOT_DIR, { recursive: true });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({path: path.join(process.env.PHOTODRIVE_SCREENSHOT_DIR, name + "-" + page.viewportSize().width + ".png"),fullPage:true, animations:"disabled"});
+}
+
+// Closing an overlay updates the URL before React commits the unmount, so wait for it to leave the DOM.
+async function expectGone(locator, timeout = 5000) {
+  await locator.first().waitFor({ state: "detached", timeout });
 }

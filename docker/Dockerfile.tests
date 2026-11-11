@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0
+FROM mcr.microsoft.com/dotnet/sdk:10.0-resolute
 ENV DEBIAN_FRONTEND=noninteractive ASPNETCORE_ENVIRONMENT=Development
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ffmpeg file imagemagick tzdata \
